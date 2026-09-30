@@ -26,6 +26,27 @@ export const llmSettingsSchema = z.object({
   apiKey: z.string().max(500).optional(),
   clearApiKey: z.boolean().optional(),
 });
+export const storageSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** host (optionally host:port); a scheme like http:// is stripped */
+  endpoint: z.string().trim().max(255).default(''),
+  port: z.number().int().min(1).max(65535).default(9000),
+  useSsl: z.boolean().default(false),
+  bucket: z.string().trim().regex(/^[a-z0-9][a-z0-9.-]{2,62}$/, 'bucket: 3-63 chars, lowercase letters, digits, dots, dashes').default('radio-rainy-audio'),
+  accessKey: z.string().max(200).optional(),
+  secretKey: z.string().max(200).optional(),
+  clearKeys: z.boolean().optional(),
+});
+export type StorageSettingsInput = z.infer<typeof storageSettingsSchema>;
+export interface StorageSettings {
+  endpoint: string;
+  port: number;
+  useSsl: boolean;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+}
+
 export type TelegramSettingsInput = z.infer<typeof telegramSettingsSchema>;
 export type WhisperSettingsInput = z.infer<typeof whisperSettingsSchema>;
 export type LlmSettingsInput = z.infer<typeof llmSettingsSchema>;
@@ -50,11 +71,12 @@ export interface LlmSettings {
 }
 
 export interface EnvFallbacks {
+  storage?: StorageSettings;
   telegram?: TelegramCredentials;
   whisper?: Partial<WhisperSettings> & { url: string };
 }
 
-type Section = 'telegram' | 'whisper' | 'llm';
+type Section = 'telegram' | 'whisper' | 'llm' | 'storage';
 interface Stored {
   plain: Record<string, unknown>;
   secrets: Record<string, string>;
@@ -136,14 +158,30 @@ export class SettingsService {
     return { enabled: true, url: String(s.plain.url), model: String(s.plain.model ?? ''), apiKey: s.secrets.apiKey };
   }
 
+  /** Audio cache (MinIO / any S3-compatible store); null when disabled or incomplete. */
+  async storage(): Promise<StorageSettings | null> {
+    const s = await this.load('storage');
+    if (s.plain.enabled) {
+      const endpoint = normalizeEndpoint(String(s.plain.endpoint ?? ''), Number(s.plain.port ?? 9000));
+      if (endpoint && s.secrets.accessKey && s.secrets.secretKey) {
+        return { endpoint: endpoint.host, port: endpoint.port, useSsl: Boolean(s.plain.useSsl), bucket: String(s.plain.bucket ?? 'radio-rainy-audio'), accessKey: s.secrets.accessKey, secretKey: s.secrets.secretKey };
+      }
+      return null; // enabled in the panel but incomplete: do not silently fall back to env
+    }
+    if ('enabled' in s.plain) return null; // explicitly disabled in the panel
+    return this.env.storage ?? null;
+  }
+
   // ---- panel views (never contain secrets) ----
 
   async view(): Promise<{
     telegram: { apiId: number | null; apiHashSet: boolean; source: 'database' | 'environment' | 'none' };
     whisper: { url: string; model: string; language: string; sampleRate: number; timeoutSeconds: number; apiKeySet: boolean; enabled: boolean; source: 'database' | 'environment' | 'none' };
     llm: { enabled: boolean; url: string; model: string; apiKeySet: boolean };
+    storage: { enabled: boolean; endpoint: string; port: number; useSsl: boolean; bucket: string; keysSet: boolean; active: boolean; source: 'database' | 'environment' | 'none' };
   }> {
-    const [t, w, l] = await Promise.all([this.load('telegram'), this.load('whisper'), this.load('llm')]);
+    const [t, w, l, st] = await Promise.all([this.load('telegram'), this.load('whisper'), this.load('llm'), this.load('storage')]);
+    const effS = await this.storage();
     const tDb = Number(t.plain.apiId) > 0 && Boolean(t.secrets.apiHash);
     const wDb = typeof w.plain.url === 'string' && w.plain.url !== '';
     const effT = await this.telegram();
@@ -161,6 +199,16 @@ export class SettingsService {
         source: wDb ? 'database' : effW ? 'environment' : 'none',
       },
       llm: { enabled: Boolean(l.plain.enabled), url: String(l.plain.url ?? ''), model: String(l.plain.model ?? ''), apiKeySet: Boolean(l.secrets.apiKey) },
+      storage: {
+        enabled: 'enabled' in st.plain ? Boolean(st.plain.enabled) : effS !== null,
+        endpoint: 'endpoint' in st.plain ? String(st.plain.endpoint ?? '') : (effS?.endpoint ?? ''),
+        port: Number('port' in st.plain ? (st.plain.port ?? 9000) : (effS?.port ?? 9000)),
+        useSsl: 'useSsl' in st.plain ? Boolean(st.plain.useSsl) : Boolean(effS?.useSsl),
+        bucket: String('bucket' in st.plain ? (st.plain.bucket ?? 'radio-rainy-audio') : (effS?.bucket ?? 'radio-rainy-audio')),
+        keysSet: Boolean(st.secrets.accessKey && st.secrets.secretKey) || effS !== null,
+        active: effS !== null,
+        source: 'enabled' in st.plain ? 'database' : effS ? 'environment' : 'none',
+      },
     };
   }
 
@@ -182,6 +230,21 @@ export class SettingsService {
     await this.save('whisper', { url: input.url, model: input.model, language: input.language, sampleRate: input.sampleRate, timeoutSeconds: input.timeoutSeconds }, secrets, actor);
   }
 
+  async updateStorage(input: StorageSettingsInput, actor: string): Promise<void> {
+    const cur = await this.load('storage');
+    const secrets = { ...cur.secrets };
+    if (input.clearKeys) {
+      delete secrets.accessKey;
+      delete secrets.secretKey;
+    } else {
+      if (input.accessKey) secrets.accessKey = input.accessKey;
+      if (input.secretKey) secrets.secretKey = input.secretKey;
+    }
+    if (input.enabled && (!input.endpoint || !secrets.accessKey || !secrets.secretKey)) throw new Error('endpoint, access key and secret key are required to enable the audio cache');
+    const ep = normalizeEndpoint(input.endpoint, input.port); // "http://host:9000" -> host + port (an explicit port in the endpoint wins)
+    await this.save('storage', { enabled: input.enabled, endpoint: ep?.host ?? '', port: ep?.port ?? input.port, useSsl: input.useSsl, bucket: input.bucket }, secrets, actor);
+  }
+
   async updateLlm(input: LlmSettingsInput, actor: string): Promise<void> {
     const cur = await this.load('llm');
     const secrets = { ...cur.secrets };
@@ -189,4 +252,12 @@ export class SettingsService {
     else if (input.apiKey) secrets.apiKey = input.apiKey;
     await this.save('llm', { enabled: input.enabled, url: input.url, model: input.model }, secrets, actor);
   }
+}
+
+/** "http://minio:9000", "minio:9000" or "minio" -> host + port. */
+export function normalizeEndpoint(raw: string, defaultPort: number): { host: string; port: number } | null {
+  const cleaned = raw.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  if (!cleaned) return null;
+  const m = /^(.+):(\d{1,5})$/.exec(cleaned);
+  return m ? { host: m[1] as string, port: Number(m[2]) } : { host: cleaned, port: defaultPort };
 }

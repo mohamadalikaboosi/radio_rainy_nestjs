@@ -7,6 +7,7 @@ interface View {
   telegram: { apiId: number | null; apiHashSet: boolean; source: string };
   whisper: { url: string; model: string; language: string; sampleRate: number; timeoutSeconds: number; apiKeySet: boolean; enabled: boolean; source: string };
   llm: { enabled: boolean; url: string; model: string; apiKeySet: boolean };
+  storage: { enabled: boolean; endpoint: string; port: number; useSsl: boolean; bucket: string; keysSet: boolean; active: boolean; source: string };
 }
 
 function useSave(reload: () => void) {
@@ -117,6 +118,53 @@ function LlmForm({ v, reload }: { v: View['llm']; reload: () => void }) {
   );
 }
 
+function StorageForm({ v, reload }: { v: View['storage']; reload: () => void }) {
+  const [f, setF] = useState({ enabled: false, endpoint: '', port: 9000, useSsl: false, bucket: 'radio-rainy-audio', accessKey: '', secretKey: '' });
+  const [test, setTest] = useState<{ ok: boolean; error?: string; objects?: number; bytes?: number } | null>(null);
+  const s = useSave(reload);
+  useEffect(() => setF((x) => ({ ...x, enabled: v.enabled, endpoint: v.endpoint, port: v.port, useSsl: v.useSsl, bucket: v.bucket })), [v.enabled, v.endpoint, v.port, v.useSsl, v.bucket]);
+  const body = (): Record<string, unknown> => {
+    const { accessKey, secretKey, ...rest } = f;
+    return { ...rest, ...(accessKey ? { accessKey } : {}), ...(secretKey ? { secretKey } : {}) };
+  };
+  const submit = (e: FormEvent): void => {
+    e.preventDefault();
+    setTest(null);
+    void s.save('/admin/settings/storage', body(), f.enabled ? 'Saved. Audio is now cached in the bucket.' : 'Saved. Audio cache is OFF (everything streams from Telegram).').then(() => setF((x) => ({ ...x, accessKey: '', secretKey: '' })));
+  };
+  return (
+    <Card title="Audio storage (MinIO / S3 cache)" actions={<Badge tone={v.active ? 'good' : 'neutral'}>{v.active ? `on (${v.source})` : 'off'}</Badge>}>
+      <p className="muted">
+        When on, each track is looked up in this bucket first; if it is missing it is downloaded from Telegram <b>once</b>, played, and saved here, so later plays and Whisper runs never hit Telegram again.
+        If the storage is down, playback silently falls back to Telegram. The bucket is created automatically. Set a bucket expiry/quota on the MinIO side if you want to bound disk usage.
+      </p>
+      <form className="stack" onSubmit={submit}>
+        <label className="radio-line"><input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} /> Enable audio cache</label>
+        <div className="row wrap">
+          <label className="grow">Endpoint (host or host:port) <input value={f.endpoint} onChange={(e) => setF({ ...f, endpoint: e.target.value })} placeholder="localhost:9000" /></label>
+          <label>Port <input type="number" value={f.port} onChange={(e) => setF({ ...f, port: Number(e.target.value) })} /></label>
+          <label>Bucket <input value={f.bucket} onChange={(e) => setF({ ...f, bucket: e.target.value })} /></label>
+          <label className="radio-line"><input type="checkbox" checked={f.useSsl} onChange={(e) => setF({ ...f, useSsl: e.target.checked })} /> HTTPS</label>
+        </div>
+        <div className="row wrap">
+          <label>Access key {v.keysSet && <small>(set — leave empty to keep)</small>}<input value={f.accessKey} onChange={(e) => setF({ ...f, accessKey: e.target.value })} autoComplete="off" /></label>
+          <label>Secret key {v.keysSet && <small>(set — leave empty to keep)</small>}<input type="password" value={f.secretKey} onChange={(e) => setF({ ...f, secretKey: e.target.value })} autoComplete="off" /></label>
+        </div>
+        <div className="row wrap">
+          <button className="btn btn-primary" disabled={s.busy}>Save</button>
+          <button type="button" className="btn" onClick={() => void api<{ ok: boolean; error?: string; objects?: number; bytes?: number }>('/admin/settings/storage/test', { method: 'POST' }).then(setTest)}>Test connection</button>
+          {v.keysSet && <button type="button" className="btn btn-danger" onClick={() => void s.save('/admin/settings/storage', { ...body(), enabled: false, clearKeys: true }, 'Keys removed and cache turned off.')}>Remove keys</button>}
+        </div>
+      </form>
+      {test && (test.ok
+        ? <div className="alert alert-good">Connected. Bucket has {test.objects ?? 0} cached tracks ({Math.round((test.bytes ?? 0) / 1_048_576)} MB).</div>
+        : <div className="alert alert-bad" role="alert">{test.error}</div>)}
+      {s.msg && <div className="alert alert-good">{s.msg}</div>}
+      <ErrorBox error={s.err} />
+    </Card>
+  );
+}
+
 export function Settings() {
   const { data, error, reload } = useAsync(() => api<View>('/admin/settings'), []);
   if (!data) return <ErrorBox error={error} />;
@@ -125,6 +173,7 @@ export function Settings() {
       <ErrorBox error={error} />
       <p className="muted">These settings live in the database (secrets are encrypted with your <code>TELEGRAM_SESSION_ENCRYPTION_KEY</code>) and apply immediately — no redeploy. Environment variables are only a fallback.</p>
       <TelegramForm v={data.telegram} reload={reload} />
+      <StorageForm v={data.storage} reload={reload} />
       <WhisperForm v={data.whisper} reload={reload} />
       <LlmForm v={data.llm} reload={reload} />
     </div>

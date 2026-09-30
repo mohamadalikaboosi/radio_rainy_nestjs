@@ -34,6 +34,13 @@ export const envSchema = z.object({
   WHISPER_SAMPLE_RATE: z.coerce.number().int().min(8000).max(96000).default(48000),
   WHISPER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
 
+  /** Optional S3-compatible audio cache (MinIO). Normally configured in the panel (Settings -> Audio storage). */
+  MINIO_ENDPOINT: z.string().optional(),
+  MINIO_PORT: z.coerce.number().int().min(1).max(65535).default(9000),
+  MINIO_USE_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  MINIO_BUCKET: z.string().default('radio-rainy-audio'),
+  MINIO_ACCESS_KEY: z.string().optional(),
+  MINIO_SECRET_KEY: z.string().optional(),
   LYRICS_CACHE_TTL: z.coerce.number().int().positive().default(86_400),
   /** Built admin UI (apps/admin/dist). When set (or found next to the API), the API also serves the panel and player. */
   ADMIN_UI_DIR: z.string().optional(),
@@ -76,6 +83,8 @@ export const SECRET_KEYS: ReadonlyArray<keyof AppConfig> = [
   'TELEGRAM_SESSION',
   'TELEGRAM_SESSION_ENCRYPTION_KEY',
   'WHISPER_API_KEY',
+  'MINIO_ACCESS_KEY',
+  'MINIO_SECRET_KEY',
   'ADMIN_PASSWORD_HASH',
   'JWT_SECRET',
   'DATABASE_URL',

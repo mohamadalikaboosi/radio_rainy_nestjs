@@ -9,6 +9,9 @@ import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
+import { AudioStoreSource } from './storage/audio-store';
+import { SettingsAudioStoreSource } from './storage/audio-store.source';
+import { CachingTelegramGateway, resolverFrom } from './storage/caching-gateway';
 import { Station, StationManager } from './playback/station-manager';
 import { SettingsTranscriptionSource, TranscriptionSource } from './transcription/transcription-source';
 import { APP_CONFIG, AppConfig, loadConfig } from './config/app-config';
@@ -81,6 +84,7 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
       inject: [DatabaseService, APP_CONFIG],
       useFactory: (db: DatabaseService, c: AppConfig) =>
         new SettingsService(db, new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY, 'app-settings'), {
+          storage: c.MINIO_ENDPOINT && c.MINIO_ACCESS_KEY && c.MINIO_SECRET_KEY ? { endpoint: c.MINIO_ENDPOINT, port: c.MINIO_PORT, useSsl: c.MINIO_USE_SSL, bucket: c.MINIO_BUCKET, accessKey: c.MINIO_ACCESS_KEY, secretKey: c.MINIO_SECRET_KEY } : undefined,
           telegram: c.TELEGRAM_API_ID && c.TELEGRAM_API_HASH ? { apiId: c.TELEGRAM_API_ID, apiHash: c.TELEGRAM_API_HASH } : undefined,
           whisper: c.WHISPER_URL ? { url: c.WHISPER_URL, model: c.WHISPER_MODEL, apiKey: c.WHISPER_API_KEY, language: c.WHISPER_LANGUAGE, sampleRate: c.WHISPER_SAMPLE_RATE, timeoutSeconds: c.WHISPER_TIMEOUT_SECONDS } : undefined,
         }),
@@ -88,7 +92,13 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
     { provide: TelegramSessionStore, inject: [DatabaseService, SessionCipher], useFactory: (db: DatabaseService, c: SessionCipher) => new TelegramSessionStore(db, c) },
     { provide: TelegramClientManager, inject: [APP_CONFIG, TelegramSessionStore, SettingsService], useFactory: (c: AppConfig, s: TelegramSessionStore, st: SettingsService) => new TelegramClientManager(c, s, st) },
     { provide: GramJsTelegramGateway, inject: [TelegramClientManager, ChannelRepository], useFactory: (m: TelegramClientManager, ch: ChannelRepository) => new GramJsTelegramGateway(m, ch) },
-    { provide: TELEGRAM_GATEWAY, useExisting: GramJsTelegramGateway },
+    { provide: 'AUDIO_STORE_SOURCE', inject: [SettingsService], useFactory: (s: SettingsService): AudioStoreSource => new SettingsAudioStoreSource(s) },
+    {
+      // Everything that downloads audio (radio, live stream, Whisper) goes through the MinIO cache when it is configured.
+      provide: TELEGRAM_GATEWAY,
+      inject: [GramJsTelegramGateway, 'AUDIO_STORE_SOURCE', TrackRepository],
+      useFactory: (inner: GramJsTelegramGateway, src: AudioStoreSource, t: TrackRepository): TelegramGateway => new CachingTelegramGateway(inner, src, resolverFrom((c, m) => t.getAudioIdentity(c, m))),
+    },
     { provide: GramJsLiveApi, inject: [TelegramClientManager, GramJsTelegramGateway], useFactory: (m: TelegramClientManager, g: GramJsTelegramGateway) => new GramJsLiveApi(m, g) },
 
     { provide: BullMqJobQueue, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new BullMqJobQueue({ redisUrl: c.REDIS_URL, prefix: c.QUEUE_PREFIX }) },
@@ -158,6 +168,6 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
     },
     { provide: STREAM_OPTIONS, useValue: { maxBacklogBytes: 512 * 1024, stationName: 'radio_rainy' } },
   ],
-  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TELEGRAM_GATEWAY, TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore, LanguageService],
+  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TELEGRAM_GATEWAY, 'AUDIO_STORE_SOURCE', TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore, LanguageService],
 })
 export class AppModule {}

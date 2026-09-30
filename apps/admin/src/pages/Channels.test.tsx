@@ -72,7 +72,7 @@ describe('<Channels />', () => {
 
 describe('<Settings />', () => {
   afterEach(() => vi.restoreAllMocks());
-  const view = { telegram: { apiId: null, apiHashSet: false, source: 'none' }, whisper: { url: '', model: 'whisper-1', language: '', sampleRate: 48000, timeoutSeconds: 900, apiKeySet: false, enabled: false, source: 'none' }, llm: { enabled: false, url: '', model: '', apiKeySet: false } };
+  const view = { telegram: { apiId: null, apiHashSet: false, source: 'none' }, whisper: { url: '', model: 'whisper-1', language: '', sampleRate: 48000, timeoutSeconds: 900, apiKeySet: false, enabled: false, source: 'none' }, llm: { enabled: false, url: '', model: '', apiKeySet: false }, storage: { enabled: false, endpoint: '', port: 9000, useSsl: false, bucket: 'radio-rainy-audio', keysSet: false, active: false, source: 'none' } };
 
   it('saves Telegram API credentials (hash is write-only and cleared from the form)', async () => {
     let body: Record<string, unknown> | null = null;
@@ -91,9 +91,28 @@ describe('<Settings />', () => {
     mock({ 'GET /admin/settings': () => view, 'PUT /admin/settings/whisper': (i) => { body = JSON.parse(String(i.body)); return view; } });
     render(<Settings />);
     fireEvent.change(await screen.findByLabelText(/Endpoint URL/), { target: { value: 'http://localhost:8000/v1/audio/transcriptions' } });
-    fireEvent.click(screen.getAllByText('Save')[1] as HTMLElement);
+    fireEvent.click(screen.getAllByText('Save')[2] as HTMLElement); // Telegram, Audio storage, Whisper
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toMatchObject({ url: 'http://localhost:8000/v1/audio/transcriptions', sampleRate: 48000, model: 'whisper-1' });
     expect(body).not.toHaveProperty('apiKey');
+  });
+
+  it('audio storage: saves keys write-only and reports the connection test result', async () => {
+    let body: Record<string, unknown> | null = null;
+    mock({
+      'GET /admin/settings': () => view,
+      'PUT /admin/settings/storage': (i) => { body = JSON.parse(String(i.body)); return view; },
+      'POST /admin/settings/storage/test': () => ({ ok: false, error: 'connect ECONNREFUSED 127.0.0.1:9000' }),
+    });
+    render(<Settings />);
+    fireEvent.click(await screen.findByLabelText('Enable audio cache'));
+    fireEvent.change(screen.getByLabelText(/Endpoint \(host/), { target: { value: 'localhost:9000' } });
+    fireEvent.change(screen.getByLabelText(/Access key/), { target: { value: 'radiorainy' } });
+    fireEvent.change(screen.getByLabelText(/Secret key/), { target: { value: 'radiorainy-secret' } });
+    fireEvent.click(screen.getAllByText('Save')[1] as HTMLElement);
+    await waitFor(() => expect(body).toMatchObject({ enabled: true, endpoint: 'localhost:9000', accessKey: 'radiorainy', secretKey: 'radiorainy-secret', bucket: 'radio-rainy-audio' }));
+    fireEvent.click(screen.getByText('Test connection'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('ECONNREFUSED');
+    expect((screen.getByLabelText(/Secret key/) as HTMLInputElement).value).toBe('');
   });
 });

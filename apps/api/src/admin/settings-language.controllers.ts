@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Post, Put, Query, Patch, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Inject, Delete, Get, HttpCode, Post, Put, Query, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { ZodPipe } from '../common/zod.pipe';
 import { LexiconRepository } from '../language/lexicon';
 import { LanguageService } from '../language/language.service';
-import { LlmSettingsInput, llmSettingsSchema, SettingsService, TelegramSettingsInput, telegramSettingsSchema, WhisperSettingsInput, whisperSettingsSchema } from '../settings/settings.service';
+import { AudioStoreSource } from '../storage/audio-store';
+import { LlmSettingsInput, llmSettingsSchema, SettingsService, StorageSettingsInput, storageSettingsSchema, TelegramSettingsInput, telegramSettingsSchema, WhisperSettingsInput, whisperSettingsSchema } from '../settings/settings.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
 import { AuditService } from './audit.service';
 
@@ -14,7 +15,11 @@ const lang = z.enum(['fa', 'en', 'mixed']);
 @Controller('admin/settings')
 @UseGuards(AdminGuard)
 export class AdminSettingsController {
-  constructor(private readonly settings: SettingsService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly audit: AuditService,
+    @Inject('AUDIO_STORE_SOURCE') private readonly store: AudioStoreSource,
+  ) {}
 
   @Get()
   view() {
@@ -33,6 +38,32 @@ export class AdminSettingsController {
     await this.settings.updateWhisper(body, req.admin.email);
     await this.audit.record({ actor: req.admin.email, action: 'settings.whisper.update', entityType: 'settings', entityId: 'whisper', after: { url: body.url, model: body.model, language: body.language, sampleRate: body.sampleRate, apiKeyChanged: Boolean(body.apiKey), apiKeyCleared: Boolean(body.clearApiKey) } });
     return this.settings.view();
+  }
+
+  /** Audio cache (MinIO / S3-compatible). Keys are write-only. */
+  @Put('storage')
+  async storage(@Body(new ZodPipe(storageSettingsSchema)) body: StorageSettingsInput, @Req() req: AdminRequest) {
+    try {
+      await this.settings.updateStorage(body, req.admin.email);
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'invalid storage settings');
+    }
+    await this.audit.record({ actor: req.admin.email, action: 'settings.storage.update', entityType: 'settings', entityId: 'storage', after: { enabled: body.enabled, endpoint: body.endpoint, port: body.port, useSsl: body.useSsl, bucket: body.bucket, keysChanged: Boolean(body.accessKey || body.secretKey), keysCleared: Boolean(body.clearKeys) } });
+    return this.settings.view();
+  }
+
+  /** Verifies the saved storage settings: bucket exists/created, write + read + delete of a tiny object. */
+  @Post('storage/test')
+  @HttpCode(200)
+  async testStorage() {
+    const store = await this.store.current();
+    if (!store) return { ok: false, error: 'Audio storage is disabled or incomplete (save the settings first)' };
+    try {
+      await store.ping();
+      return { ok: true, ...(await store.usage(50_000)) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   @Put('llm')

@@ -33,7 +33,7 @@ Everything else is configured **in the admin panel** (`http://localhost:3000/pan
 2. **Telegram** → log in: phone → code → 2FA password. The session is stored encrypted (AES-256-GCM) — a session string cannot be *hashed* because the client needs the original; admin passwords are hashed with scrypt.
 3. **Channels** → add one or more channels (`@username`, `t.me` link or id). **Each channel is its own radio station** (own tracks, hashtags, rules, config, history, stream `/radio/<slug>/stream`). Press **Start** to put a station on air.
 4. Optional: **Stream inside Telegram** (toggle per channel) also publishes the station to the channel's live stream / voice chat, so the music plays in Telegram too (see below).
-5. Optional: **Settings** → Whisper (URL/model/language/sample rate) and LLM.
+5. Optional: **Settings** → **Audio storage (MinIO)**, Whisper (URL/model/language/sample rate) and LLM.
 
 * Player: `http://localhost:3000/` (station picker + live synchronized lyrics) · Admin panel: `http://localhost:3000/panel`
 
@@ -43,6 +43,11 @@ Only these are **required**: `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_SESSION_ENCR
 Telegram API id/hash, Whisper and LLM settings are stored in the DB (panel); the matching `TELEGRAM_API_*` / `WHISPER_*` env vars are just an optional fallback. Tuning: `RADIO_PREBUFFER_SECONDS` (default **2**, lower = lower latency), `RADIO_STREAM_BITRATE_KBPS`, `RADIO_RECENT_TRACK_WINDOW` (default for *new* channels), `WHISPER_SAMPLE_RATE` (default **48000**), `LYRICS_CACHE_TTL`, `TELEGRAM_SYNC_INTERVAL_SECONDS`, `QUEUE_PREFIX`, `FFMPEG_PATH`, `TMP_DIR`, `ADMIN_UI_DIR`, `LOG_LEVEL`, `PORT` — see `.env.example`.
 
 The app **refuses to start** with an invalid/missing required configuration and lists every problem. Secrets are never logged (pino redaction + config redaction) and never returned by any API.
+
+### Audio cache in MinIO (optional)
+
+`docker compose up -d` also starts MinIO (`localhost:9000`, console `localhost:9001`, user/password in `docker-compose.yml` — change them). In **Settings → Audio storage** enter endpoint, access/secret key and press *Test connection*; the bucket is created automatically.
+When enabled, *every* audio read (radio, Telegram live stream, Whisper) goes through the cache: **hit** → streamed from MinIO (Telegram is not touched); **miss** → downloaded from Telegram **once**, streamed to the listener and written to MinIO at the same time (a skipped or failed download never leaves a partial object; the fill still completes after a skip). If MinIO is down or a read fails, playback transparently falls back to Telegram. Objects are keyed by channel + message + Telegram file identity, so an edited/replaced Telegram file is re-downloaded. Files above 64 MB are streamed without caching. Bound disk usage with a MinIO bucket lifecycle/quota. Keys are stored encrypted like every other secret. Any S3-compatible server works.
 
 ### Telegram live stream (music inside Telegram)
 

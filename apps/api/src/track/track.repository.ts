@@ -223,4 +223,14 @@ export class TrackRepository {
     const r = await this.db.query<{ lyrics_language: 'fa' | 'en' | 'mixed' | 'unknown' | null }>('SELECT lyrics_language FROM tracks WHERE id = $1', [trackId]);
     return r.rows[0]?.lyrics_language ?? null;
   }
+
+  /** What identifies the stored audio of a message: document id + size come from the file reference. */
+  async getAudioIdentity(channelId: string, messageId: number): Promise<{ fileReference: string; fileSize: number | null } | null> {
+    const r = await this.db.query<{ telegram_file_reference: string; file_size: string | null }>(
+      'SELECT telegram_file_reference, file_size FROM tracks WHERE telegram_channel_id = $1 AND telegram_message_id = $2',
+      [channelId, messageId],
+    );
+    const x = r.rows[0];
+    return x ? { fileReference: x.telegram_file_reference, fileSize: x.file_size === null ? null : Number(x.file_size) } : null;
+  }
 }

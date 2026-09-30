@@ -4,6 +4,10 @@ import { sign } from 'jsonwebtoken';
 import { ADMIN, bootAdminApp, FakeTelegramManager } from '../../test/admin-app';
 import { FakeTelegramGateway } from '../../test/fake-telegram';
 import { DatabaseService } from '../database/database.service';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import S3rver from 's3rver';
 import { LexiconRepository } from '../language/lexicon';
 
 const CH = '1001';
@@ -352,6 +356,40 @@ describe('Super Admin API (e2e)', () => {
       await http().put('/admin/settings/whisper').set(auth()).send({ url: 'not a url' }).expect(400);
       const off = (await http().put('/admin/settings/whisper').set(auth()).send({ url: '', clearApiKey: true }).expect(200)).body;
       expect(off.whisper.apiKeySet).toBe(false);
+    });
+
+    it('Audio storage (MinIO): keys write-only, validated, connection test against a real S3 API, can be disabled', async () => {
+      const s3 = new S3rver({ port: 0, address: '127.0.0.1', silent: true, directory: mkdtempSync(join(tmpdir(), 's3e-')), configureBuckets: [{ name: 'radio-rainy-audio', configs: [] }] });
+      const addr = await s3.run();
+      const port = typeof addr === 'string' ? Number(addr.split(':').pop()) : addr.port;
+      try {
+        // not enabled + no keys yet
+        expect((await http().get('/admin/settings').set(auth())).body.storage).toMatchObject({ enabled: false, active: false });
+        // enabling without keys is rejected
+        await http().put('/admin/settings/storage').set(auth()).send({ enabled: true, endpoint: `127.0.0.1:${port}`, bucket: 'radio-rainy-audio' }).expect(400);
+        await http().put('/admin/settings/storage').set(auth()).send({ enabled: false, endpoint: 'x', bucket: 'Bad_Bucket' }).expect(400);
+        expect((await http().post('/admin/settings/storage/test').set(auth()).expect(200)).body.ok).toBe(false);
+
+        const r = (await http().put('/admin/settings/storage').set(auth()).send({ enabled: true, endpoint: `http://127.0.0.1:${port}`, port, useSsl: false, bucket: 'radio-rainy-audio', accessKey: 'S3RVER', secretKey: 'S3RVER' }).expect(200)).body;
+        expect(r.storage).toMatchObject({ enabled: true, endpoint: '127.0.0.1', bucket: 'radio-rainy-audio', keysSet: true, active: true, source: 'database' });
+        expect(JSON.stringify(r)).not.toMatch(/S3RVER/);
+        expect(JSON.stringify((await db.query('SELECT * FROM app_settings')).rows)).not.toMatch(/S3RVER/);
+        expect(JSON.stringify((await db.query(`SELECT after FROM audit_logs WHERE action = 'settings.storage.update'`)).rows)).not.toMatch(/S3RVER/);
+
+        const ok = (await http().post('/admin/settings/storage/test').set(auth()).expect(200)).body;
+        expect(ok).toMatchObject({ ok: true, objects: 0 });
+
+        // an unreachable server is reported as { ok: false, error }, never thrown
+        await http().put('/admin/settings/storage').set(auth()).send({ enabled: true, endpoint: '127.0.0.1:1', bucket: 'radio-rainy-audio' }).expect(200);
+        const bad = (await http().post('/admin/settings/storage/test').set(auth()).expect(200)).body;
+        expect(bad.ok).toBe(false);
+        expect(String(bad.error)).toMatch(/ECONNREFUSED|connect/i);
+
+        const off = (await http().put('/admin/settings/storage').set(auth()).send({ enabled: false, endpoint: `127.0.0.1:${port}`, bucket: 'radio-rainy-audio' }).expect(200)).body;
+        expect(off.storage.active).toBe(false);
+      } finally {
+        await s3.close();
+      }
     });
 
     it('LLM settings', async () => {

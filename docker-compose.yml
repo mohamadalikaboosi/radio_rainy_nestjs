@@ -6,3 +6,15 @@ services:
   redis:
     image: redis:7
     ports: ["6379:6379"]
+  # Audio cache. In the panel: Settings -> Audio storage -> endpoint minio:9000 (or localhost:9000 when the API runs on the host),
+  # access key/secret = MINIO_ROOT_USER/PASSWORD below. The bucket is created automatically.
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: radiorainy
+      MINIO_ROOT_PASSWORD: radiorainy-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio-data:/data"]
+volumes:
+  minio-data:
