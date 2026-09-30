@@ -92,7 +92,26 @@ Every track is converted (ffmpeg) to **mono FLAC at 48 kHz** (configurable in Se
 | `GET /radio/:slug/current/lyrics` | `{trackId, status: READY\|PENDING\|PROCESSING\|FAILED\|NONE\|PLAIN, lines:[{start,end,text}]}` |
 | `GET /radio/:slug/current/lyrics/active` | `{index, start, end, text, position}` (`index: -1` when nothing is sung) |
 
+| `GET /radio/:slug/sponsors` | active sponsors `[{id,name,tagline,ctaLabel,logoUrl,url}]` (`url` is a tracked redirect) |
+| `GET /radio/:slug/vote?voterId=` · `POST /radio/:slug/vote {voterId,hashtag}` | the running tag vote (`NONE\|OPEN\|PLAYING`) / cast a vote |
+| `GET /radio/ads/:id/image` · `/radio/sponsors/:id/logo` · `/radio/go/{ad,sponsor}/:id` | artwork and click-counting redirects |
+| `GET /metrics` | Prometheus metrics (needs `METRICS_TOKEN`, see `docs/PLAYBACK.md`) |
+
+`/radio/:slug/current` returns `status: "AD"` with an `ad` object while an audio ad is on air.
 The unprefixed `/radio/stream`, `/radio/current`, … remain and serve the default station (first started channel).
+
+### Player (PWA) and languages
+
+The public page (`/`) is an installable PWA (manifest + service worker that caches only the app shell; the stream and API always go to the network), with lock-screen controls (Media Session), an equalizer when no synchronized lyrics exist, the ad/sponsor/vote UI and a language switcher.
+
+**Adding a language:** copy `apps/admin/src/i18n/locales/en.json` to `<code>.json` (e.g. `ar.json`), translate the values, set `_meta.name` (shown in the switcher) and `_meta.dir` (`rtl` for Arabic/Persian/Hebrew). Nothing else to change; tests check that placeholders (`{n}`) match English and that no unknown keys are used. Missing keys fall back to English. English and Persian ship with the app; the panel's older pages still contain English-only text.
+
+### Engagement (per station, panel → *Engagement & ads*)
+
+* **Audio ads** – upload MP3 (other formats are transcoded by ffmpeg), optional image and link; played after every *N* tracks (0 = off), weighted, all stations or one. Listeners see the image and a button while the ad plays.
+* **Sponsors** – banner with a button (link, tagline, logo, date window); views and clicks are counted.
+* **Tag vote** – every *X* minutes listeners are offered a few tags; after *Y* minutes the winner plays for *Z* minutes, then the normal selection resumes.
+* **Telegram live: link + key** – instead of letting the app create the live stream through your account, paste Telegram's *Server URL* and *Stream key* (like OBS) on the Channels page. The key is stored encrypted and never returned by the API.
 
 ## Admin API (`Authorization: Bearer <jwt>`, SUPER_ADMIN enforced server-side on every route)
 
@@ -102,7 +121,7 @@ The unprefixed `/radio/stream`, `/radio/current`, … remain and serve the defau
 
 * **Selection** — `RadioRuleEngine` is a pure function `(config, rules, candidates, history, rng) → track`. Eligibility (which tracks may play) is separate from probability (weights, no duplicated tracks). Modes: `GLOBAL_RANDOM`, `HASHTAG_RANDOM` (ANY/ALL + weights), `HASHTAG_ROTATION`, `CUSTOM_RULE` (priority tiers, include/exclude). The same engine serves the live radio, `/admin/radio/preview` (deterministic per `seed`) and tests. The UI contains no selection logic.
 * **Concurrency** — config writes lock the channel's config row, bump `configurationVersion`, support `expectedVersion` (409 on conflict) and are audited; skip/play-next are commands executed by the single playback engine (idempotent, `transition_seq` guard); the leader (Postgres advisory lock) runs one player per started channel; admin commands (skip, play-next, config-changed, stations-changed) travel over Redis pub/sub.
-* **Streaming / latency** — Telegram chunks (128 KiB) → optional ffmpeg (non-MP3) → pacer (real-time, `RADIO_PREBUFFER_SECONDS` burst on a *continuous timeline* so latency does not grow at track changes) → broadcaster (short ring buffer for instant join, bounded per-listener backlog, slow listeners dropped). The next track is selected ~20 s before the end and its first 256 KiB prefetched → gapless transitions. Broken downloads resume from the last byte.
+* **Streaming / latency** — Telegram chunks (128 KiB) → optional ffmpeg (non-MP3) → pacer (real-time, `RADIO_PREBUFFER_SECONDS` burst on a *continuous timeline* so latency does not grow at track changes) → broadcaster (short ring buffer for instant join, bounded per-listener backlog, slow listeners dropped). The next track is selected `RADIO_PREFETCH_SECONDS` (30) before the end, downloaded into the local **disk cache** and verified READY (broken/slow/corrupt ones are replaced while the current track still plays) → gapless transitions. Broken downloads resume from the last byte. Full architecture, protocol decision, failure handling and metrics: **[docs/PLAYBACK.md](docs/PLAYBACK.md)**.
 * **Lyrics** — Telegraph (JSON API, HTML fallback, no CSS-selector coupling) → ffmpeg 16 kHz mono → Whisper (word timestamps when available) → **monotonic word-level DP alignment** (Levenshtein similarity; handles repeated choruses, missing lines, ASR errors, multiple lines per segment) → versioned `synced_lyrics`. Jobs: `telegram-sync`, `lyrics-fetch`, `audio-transcription`, `lyrics-alignment` (BullMQ, retries + backoff, idempotent, cached). Lyrics failures never affect playback.
 * **Resilience** — Telegram down / not logged in ⇒ radio state `ERROR` with backoff, tracks are *not* penalised; download failure ⇒ track skipped (`FAILED` after 3 consecutive failures, restored by the next sync); empty channel ⇒ `IDLE` (no busy loop).
 

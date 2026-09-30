@@ -8,3 +8,10 @@ createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </StrictMode>,
 );
+
+// PWA: caches only the app shell (see public/sw.js); the radio stream and the API always go to the network.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });
+}

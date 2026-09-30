@@ -4,7 +4,7 @@ import { ChannelContext } from '../channel-context';
 import { Channels } from './Channels';
 import { Settings } from './Settings';
 
-const ch = (over: Partial<ChannelItem> = {}): ChannelItem => ({ id: '1001', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: false, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, ...over });
+const ch = (over: Partial<ChannelItem> = {}): ChannelItem => ({ id: '1001', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: false, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ...over });
 
 function mock(handlers: Record<string, (init: RequestInit) => unknown>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

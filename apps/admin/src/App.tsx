@@ -4,7 +4,11 @@ import { UNAUTHORIZED_EVENT, api, authStore } from './api';
 import { ChannelProvider, useChannels } from './channel-context';
 import { Icon } from './icons';
 import { LiveProvider, useLive } from './live-context';
+import { I18nProvider, LanguageSwitcher, useT } from './i18n';
+import { Ads } from './pages/Ads';
 import { Audit } from './pages/Audit';
+import { Engagement } from './pages/Engagement';
+import { Sponsors } from './pages/Sponsors';
 import { Channels } from './pages/Channels';
 import { Dashboard } from './pages/Dashboard';
 import { Hashtags } from './pages/Hashtags';
@@ -23,34 +27,39 @@ import { Tracks } from './pages/Tracks';
 
 interface NavItem { to: string; label: string; icon: string; end?: boolean; sub?: boolean }
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'On air', items: [
-    { to: '/panel', label: 'Live control', icon: 'live', end: true },
-    { to: '/panel/dashboard', label: 'Overview', icon: 'dashboard' },
+  { group: 'nav.onAir', items: [
+    { to: '/panel', label: 'nav.live', icon: 'live', end: true },
+    { to: '/panel/dashboard', label: 'nav.overview', icon: 'dashboard' },
   ] },
-  { group: 'Radio', items: [
-    { to: '/panel/channels', label: 'Channels', icon: 'channels' },
-    { to: '/panel/radio', label: 'Selection & hashtags', icon: 'radio' },
-    { to: '/panel/rules', label: 'Rules', icon: 'rules' },
-    { to: '/panel/history', label: 'History', icon: 'history' },
+  { group: 'nav.radio', items: [
+    { to: '/panel/channels', label: 'nav.channels', icon: 'channels' },
+    { to: '/panel/radio', label: 'nav.selection', icon: 'radio' },
+    { to: '/panel/rules', label: 'nav.rules', icon: 'rules' },
+    { to: '/panel/history', label: 'nav.history', icon: 'history' },
   ] },
-  { group: 'Library', items: [
-    { to: '/panel/tracks', label: 'Tracks', icon: 'tracks', end: true },
-    { to: '/panel/tracks-enabled', label: 'Enabled', icon: 'tracks', sub: true },
-    { to: '/panel/tracks-disabled', label: 'Disabled', icon: 'tracks', sub: true },
-    { to: '/panel/hashtags', label: 'Hashtags', icon: 'hashtags' },
-    { to: '/panel/lyrics/pending', label: 'Lyrics: pending', icon: 'lyrics', sub: true },
-    { to: '/panel/lyrics/processing', label: 'Lyrics: processing', icon: 'lyrics', sub: true },
-    { to: '/panel/lyrics/ready', label: 'Lyrics: ready', icon: 'lyrics', sub: true },
-    { to: '/panel/lyrics/failed', label: 'Lyrics: failed', icon: 'lyrics', sub: true },
+  { group: 'nav.monetize', items: [
+    { to: '/panel/engagement', label: 'nav.engagement', icon: 'radio' },
+    { to: '/panel/ads', label: 'nav.ads', icon: 'live' },
+    { to: '/panel/sponsors', label: 'nav.sponsors', icon: 'channels' },
   ] },
-  { group: 'Insights', items: [
-    { to: '/panel/reports', label: 'Reports', icon: 'reports' },
-    { to: '/panel/language', label: 'Language (fa/en)', icon: 'language' },
+  { group: 'nav.library', items: [
+    { to: '/panel/tracks', label: 'nav.tracks', icon: 'tracks', end: true },
+    { to: '/panel/tracks-enabled', label: 'nav.enabled', icon: 'tracks', sub: true },
+    { to: '/panel/tracks-disabled', label: 'nav.disabled', icon: 'tracks', sub: true },
+    { to: '/panel/hashtags', label: 'nav.hashtags', icon: 'hashtags' },
+    { to: '/panel/lyrics/pending', label: 'nav.lyricsPending', icon: 'lyrics', sub: true },
+    { to: '/panel/lyrics/processing', label: 'nav.lyricsProcessing', icon: 'lyrics', sub: true },
+    { to: '/panel/lyrics/ready', label: 'nav.lyricsReady', icon: 'lyrics', sub: true },
+    { to: '/panel/lyrics/failed', label: 'nav.lyricsFailed', icon: 'lyrics', sub: true },
   ] },
-  { group: 'System', items: [
-    { to: '/panel/telegram', label: 'Telegram', icon: 'telegram' },
-    { to: '/panel/settings', label: 'Settings', icon: 'settings' },
-    { to: '/panel/audit', label: 'Audit log', icon: 'audit' },
+  { group: 'nav.insights', items: [
+    { to: '/panel/reports', label: 'nav.reports', icon: 'reports' },
+    { to: '/panel/language', label: 'nav.language', icon: 'language' },
+  ] },
+  { group: 'nav.system', items: [
+    { to: '/panel/telegram', label: 'nav.telegram', icon: 'telegram' },
+    { to: '/panel/settings', label: 'nav.settings', icon: 'settings' },
+    { to: '/panel/audit', label: 'nav.audit', icon: 'audit' },
   ] },
 ];
 
@@ -68,6 +77,7 @@ function ChannelPicker() {
 
 /** Global status strip: what is on air, how many people listen, is Telegram connected. */
 function TopBar({ onSignOut }: { onSignOut: () => void }) {
+  const t = useT();
   const { stations } = useLive();
   const [tg, setTg] = useState<string>('…');
   useEffect(() => {
@@ -82,18 +92,19 @@ function TopBar({ onSignOut }: { onSignOut: () => void }) {
   const problems = stations.filter((s) => s.started && (s.status === 'ERROR' || s.liveOnTelegram.status === 'ERROR')).length;
   return (
     <header className="topbar">
-      <span className="chip"><span className={`dot ${onAir > 0 ? 'dot-good' : ''}`} />{onAir}/{stations.filter((s) => s.started).length} stations on air</span>
-      <span className="chip">👥 {listeners} listening</span>
+      <span className="chip"><span className={`dot ${onAir > 0 ? 'dot-good' : ''}`} />{t('topbar.onAir', { on: onAir, total: stations.filter((s) => s.started).length })}</span>
+      <span className="chip">👥 {t('topbar.listening', { n: listeners })}</span>
       <span className="chip"><span className={`dot ${tg === 'READY' ? 'dot-good' : tg === 'NOT_LOGGED_IN' || tg === 'NOT_CONFIGURED' ? 'dot-warn' : 'dot-bad'}`} />Telegram {tg.toLowerCase().replace(/_/g, ' ')}</span>
       {problems > 0 && <span className="chip"><span className="dot dot-bad" />✕ {problems} station{problems > 1 ? 's' : ''} with problems</span>}
       <span className="spacer" />
-      <a className="chip" href="/" target="_blank" rel="noreferrer"><Icon name="external" /> Public player</a>
-      <button className="btn btn-small" onClick={onSignOut}>Sign out</button>
+      <a className="chip" href="/" target="_blank" rel="noreferrer"><Icon name="external" /> {t('topbar.publicPlayer')}</a>
+      <button className="btn btn-small" onClick={onSignOut}>{t('topbar.signOut')}</button>
     </header>
   );
 }
 
 function Panel() {
+  const t = useT();
   const [authed, setAuthed] = useState<boolean>(() => authStore.get() !== null);
   useEffect(() => {
     const off = (): void => setAuthed(false);
@@ -113,11 +124,12 @@ function Panel() {
         <div className="shell">
           <nav className="side" aria-label="Main">
             <div className="brand">🌧 radio_rainy</div>
+            <div className="picker"><LanguageSwitcher /></div>
             <ChannelPicker />
             {NAV.map((g) => (
               <div key={g.group}>
-                <div className="group">{g.group}</div>
-                {g.items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} style={n.sub ? { paddingLeft: '1.9rem', fontSize: '.88rem' } : undefined}>{!n.sub && <Icon name={n.icon} />}{n.label}</NavLink>)}
+                <div className="group">{t(g.group)}</div>
+                {g.items.map((n) => <NavLink key={n.to} to={n.to} end={n.end} style={n.sub ? { paddingLeft: '1.9rem', fontSize: '.88rem' } : undefined}>{!n.sub && <Icon name={n.icon} />}{t(n.label)}</NavLink>)}
               </div>
             ))}
           </nav>
@@ -145,6 +157,9 @@ function Panel() {
                 <Route path="telegram" element={<Telegram />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="audit" element={<Audit />} />
+                <Route path="engagement" element={<Engagement />} />
+                <Route path="ads" element={<Ads />} />
+                <Route path="sponsors" element={<Sponsors />} />
                 <Route path="*" element={<Navigate to="/panel" replace />} />
               </Routes>
             </div>
@@ -157,6 +172,7 @@ function Panel() {
 
 export function App() {
   return (
+    <I18nProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Player />} />
@@ -164,5 +180,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </I18nProvider>
   );
 }

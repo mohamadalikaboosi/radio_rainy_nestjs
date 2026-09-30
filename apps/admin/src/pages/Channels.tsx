@@ -3,6 +3,7 @@ import { ChannelItem, api } from '../api';
 import { useChannels } from '../channel-context';
 import { errorMessage } from '../hooks';
 import { ActionButton, Badge, Card, ErrorBox } from '../ui';
+import { LiveTarget } from './LiveTarget';
 
 const liveTone = (s: ChannelItem['liveStatus']) => (s === 'LIVE' ? 'good' : s === 'ERROR' ? 'bad' : s === 'STARTING' ? 'warn' : 'neutral');
 
@@ -65,6 +66,7 @@ export function Channels() {
                     </label>
                     {c.telegramLiveEnabled && <Badge tone={liveTone(c.liveStatus)}>{c.liveStatus}</Badge>}
                     {c.liveError && <div className="inline-error" role="alert">{c.liveError}</div>}
+                    <LiveTarget channel={c} onChanged={reload} />
                   </td>
                   <td className="row wrap">
                     <ActionButton className={c.started ? 'btn-danger' : 'btn-primary'} onAction={act(`/admin/channels/${c.id}/${c.started ? 'stop' : 'start'}`)}>{c.started ? '■ Stop' : '▶ Start'}</ActionButton>

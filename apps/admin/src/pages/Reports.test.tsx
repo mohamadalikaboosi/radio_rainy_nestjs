@@ -4,7 +4,7 @@ import { ChannelItem } from '../api';
 import { ChannelContext } from '../channel-context';
 import { Reports } from './Reports';
 
-const channel: ChannelItem = { id: '1001', reference: '@c', title: 'Chan', username: 'c', slug: 'chan', started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null };
+const channel: ChannelItem = { id: '1001', reference: '@c', title: 'Chan', username: 'c', slug: 'chan', started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0 };
 const report = (plays = 41) => ({
   range: '7d', channel: null, generatedAt: new Date().toISOString(),
   summary: { plays, uniqueTracks: 12, airtimeSeconds: 7200, skipRate: 0.25, errorRate: 0.05, outcomes: { finished: 28, skipped: 10, admin: 0, errors: 2 }, audience: { averageListeners: 4.5, peakListeners: 11, listenerMinutes: 900 } },
