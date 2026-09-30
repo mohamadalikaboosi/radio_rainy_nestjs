@@ -1,4 +1,4 @@
-import { ConfigError, loadConfig, redactConfig } from './app-config';
+import { ConfigError, isWhisperEnabled, loadConfig, redactConfig } from './app-config';
 
 const valid = {
   TELEGRAM_API_ID: '123',
@@ -39,5 +39,13 @@ describe('loadConfig', () => {
     expect(JSON.stringify(r)).not.toContain('abab');
     expect(JSON.stringify(r)).not.toContain('hash"');
     expect(r.JWT_SECRET).toBe('[REDACTED]');
+  });
+
+  it('treats missing or empty Whisper env as "disabled", not as an error', () => {
+    const { WHISPER_URL: _omit, ...withoutWhisper } = valid;
+    void _omit;
+    expect(isWhisperEnabled(loadConfig(withoutWhisper))).toBe(false);
+    expect(isWhisperEnabled(loadConfig({ ...valid, WHISPER_URL: '', WHISPER_API_KEY: '', WHISPER_MODEL: '' }))).toBe(false);
+    expect(isWhisperEnabled(loadConfig(valid))).toBe(true);
   });
 });

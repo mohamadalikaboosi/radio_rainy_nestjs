@@ -25,7 +25,8 @@ export const envSchema = z.object({
 
   WHISPER_PROVIDER: z.enum(['openai-compatible']).default('openai-compatible'),
   WHISPER_MODEL: z.string().min(1).default('whisper-1'),
-  WHISPER_URL: z.string().url(),
+  /** Optional: when unset, AI lyrics synchronization is disabled entirely (radio and plain lyrics still work). */
+  WHISPER_URL: z.string().url().optional(),
   WHISPER_API_KEY: z.string().optional(),
   WHISPER_LANGUAGE: z.string().optional(),
   WHISPER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
@@ -46,7 +47,10 @@ export class ConfigError extends Error {}
 
 /** Validates the environment once at startup. Throws with every problem listed; never continues half-configured. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = envSchema.safeParse(env);
+  // An empty value (`WHISPER_URL=` in .env) means "not set", never an error.
+  const cleaned: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && v.trim() !== '') cleaned[k] = v;
+  const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new ConfigError(`Invalid configuration:\n${problems}`);
@@ -72,3 +76,7 @@ export function redactConfig(cfg: AppConfig): Record<string, unknown> {
   return out;
 }
 
+
+export function isWhisperEnabled(cfg: Pick<AppConfig, 'WHISPER_URL'>): boolean {
+  return cfg.WHISPER_URL !== undefined;
+}
