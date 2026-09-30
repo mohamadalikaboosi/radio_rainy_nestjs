@@ -6,6 +6,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "dev:api": "pnpm --filter @radio_rainy/api dev",
+    "dev:admin": "pnpm --filter @radio_rainy/admin dev"
   }
 }
