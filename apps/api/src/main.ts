@@ -30,7 +30,16 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  await app.listen(cfg.PORT, '0.0.0.0');
+  try {
+    await app.listen(cfg.PORT, '0.0.0.0');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      throw new Error(
+        `Port ${cfg.PORT} is already in use. Stop the other process (Windows: netstat -ano | findstr :${cfg.PORT}, then taskkill /PID <pid> /F) or set another PORT in .env.`,
+      );
+    }
+    throw err;
+  }
   app.get(Logger).log({ msg: 'radio_rainy started', port: cfg.PORT, ui: existsSync(index) ? uiDir : 'not built', config: redactConfig(cfg) });
 }
 

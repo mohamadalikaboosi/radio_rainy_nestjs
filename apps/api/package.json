@@ -11,7 +11,7 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest --runInBand",
     "hash-password": "ts-node src/scripts/hash-password.ts",
-    "dev": "node --env-file=../../.env -r ts-node/register src/main.ts"
+    "dev": "node -r ts-node/register -r ./src/scripts/dev-env.ts src/main.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",
