@@ -23,6 +23,10 @@ export const envSchema = z.object({
   RADIO_RECENT_TRACK_WINDOW: z.coerce.number().int().min(0).default(10),
   /** Seconds of audio sent in a burst to new listeners; lower = lower latency. */
   RADIO_PREBUFFER_SECONDS: z.coerce.number().min(0).max(30).default(2),
+  /** Start selecting + downloading the NEXT track this many seconds before the current one ends. */
+  RADIO_PREFETCH_SECONDS: z.coerce.number().min(5).max(600).default(30),
+  /** How long a transition waits for the pre-fetched track's first bytes before it gives up on it and picks another track. */
+  RADIO_PREFETCH_TIMEOUT_SECONDS: z.coerce.number().min(1).max(120).default(15),
   RADIO_STREAM_BITRATE_KBPS: z.coerce.number().int().min(32).max(320).default(128),
 
   WHISPER_PROVIDER: z.enum(['openai-compatible']).default('openai-compatible'),
@@ -41,6 +45,12 @@ export const envSchema = z.object({
   MINIO_BUCKET: z.string().default('radio-rainy-audio'),
   MINIO_ACCESS_KEY: z.string().optional(),
   MINIO_SECRET_KEY: z.string().optional(),
+  /** Local audio cache (every downloaded track is kept here; Telegram is hit once per track). 0 MB disables it. */
+  AUDIO_CACHE_DIR: z.string().optional(),
+  AUDIO_CACHE_MAX_MB: z.coerce.number().int().min(0).default(1024),
+  AUDIO_CACHE_CONCURRENT_FILLS: z.coerce.number().int().min(1).max(8).default(2),
+  /** Enables GET /metrics (Prometheus text) for `Authorization: Bearer <token>`. Unset = endpoint disabled. */
+  METRICS_TOKEN: z.string().min(16).optional(),
   LYRICS_CACHE_TTL: z.coerce.number().int().positive().default(86_400),
   /** Built admin UI (apps/admin/dist). When set (or found next to the API), the API also serves the panel and player. */
   ADMIN_UI_DIR: z.string().optional(),

@@ -66,6 +66,32 @@ export class PrefetchedAudio implements OpenedAudio {
     return this.inner.bytesPerSec;
   }
 
+  /** Why the read-ahead failed (if it did). */
+  get failure(): unknown {
+    return this.error;
+  }
+
+  /** The first buffered bytes (for a quick sanity check of the audio). */
+  head(max: number): Buffer {
+    return Buffer.concat(this.buffered.map((b) => Buffer.from(b))).subarray(0, max);
+  }
+
+  /**
+   * Waits for the read-ahead to finish (first bytes arrived / file ended) or fail, at most `timeoutMs`.
+   * A slow download is 'TIMEOUT', a failed one 'FAILED'.
+   */
+  async whenReady(timeoutMs: number): Promise<'READY' | 'FAILED' | 'TIMEOUT'> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<'TIMEOUT'>((resolve) => {
+      timer = setTimeout(() => resolve('TIMEOUT'), timeoutMs);
+    });
+    try {
+      return await Promise.race([this.start().then(() => (this.error !== undefined ? ('FAILED' as const) : ('READY' as const))), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   start(): Promise<void> {
     this.started ??= (async () => {
       try {

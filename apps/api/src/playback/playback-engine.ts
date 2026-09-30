@@ -1,4 +1,7 @@
 import { Logger } from '@nestjs/common';
+import { hasMpegFrameSync } from '../engagement/mp3-info';
+import { StationMetrics } from '../metrics/radio-metrics';
+import { computePosition } from '../radio/playback-position';
 import { RadioScheduler } from '../radio/radio-scheduler';
 import { RadioStateRepository } from '../radio/radio-state.repository';
 import { Broadcaster } from '../streaming/broadcaster';
@@ -18,6 +21,10 @@ export interface EngineOptions {
   /** How long to wait before re-checking when nothing is playable. */
   idleRetryMs: number;
   maxBackoffMs: number;
+  /** How long a transition waits for the pre-fetched track's first bytes before replacing it with another one. */
+  prefetchTimeoutMs?: number;
+  /** Reject tracks whose first bytes contain no MPEG audio frame (corrupt/garbage downloads) before they go on air. */
+  validateAudio?: boolean;
   now: () => number;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -29,6 +36,29 @@ export interface CurrentPlayback {
   seq: number;
   bytesPerSec: number;
 }
+
+export type PlaybackStatus = 'PLAYING' | 'BUFFERING' | 'TRANSITIONING' | 'IDLE' | 'AD' | 'ERROR' | 'STOPPED';
+
+/** Snapshot of the canonical timeline: `position` is derived from `startedAt` and the clock, never counted per listener. */
+export interface PlaybackState {
+  status: PlaybackStatus;
+  trackId: string | null;
+  startedAt: number | null;
+  duration: number | null;
+  position: number;
+  /** Seconds of audio already sent beyond real time (how much the listeners' buffers can absorb). */
+  bufferedSeconds: number;
+  seq: number;
+}
+
+export type PlaybackEvent =
+  | { type: 'track-started'; trackId: string; seq: number }
+  | { type: 'track-ended'; trackId: string; reason: EndReason }
+  | { type: 'transition'; gapMs: number; audible: boolean }
+  | { type: 'ad-started'; adId: string }
+  | { type: 'ad-ended'; adId: string }
+  | { type: 'prefetch-failover'; trackId: string; reason: 'FAILED' | 'TIMEOUT' | 'CORRUPT' };
+export type PlaybackListener = (event: PlaybackEvent) => void;
 
 export type SkipStatus = 'SKIPPED' | 'ALREADY_SKIPPING' | 'NOT_PLAYING' | 'STALE';
 
@@ -64,6 +94,7 @@ export interface EngineDeps {
   broadcaster: Broadcaster;
   options: EngineOptions;
   ads?: AdSource;
+  metrics?: StationMetrics;
 }
 
 /**
@@ -71,6 +102,9 @@ export interface EngineDeps {
  * Exactly one engine runs at a time (leader lock); all mutations of "what plays next" go through this
  * class, which serializes them, so skip / play-next can never start two simultaneous transitions.
  */
+const MAX_SELECT_ATTEMPTS = 3;
+const isOutage = (err: unknown): boolean => err instanceof TelegramNotReadyError || err instanceof TelegramFloodWaitError;
+
 export class PlaybackEngine {
   private readonly logger = new Logger(PlaybackEngine.name);
   private readonly timeline: Timeline;
@@ -82,6 +116,10 @@ export class PlaybackEngine {
   private currentAbort: AbortController | null = null;
   private abortReason: EndReason | null = null;
   private forcedTrackId: string | null = null;
+  private status: PlaybackStatus = 'STOPPED';
+  private readonly listeners = new Set<PlaybackListener>();
+  private lastSliceAt: number | null = null;
+  private lastAheadMs = 0;
   private adAbort: AbortController | null = null;
   private tracksSinceAd = 0;
   private plan: Plan | null = null;
@@ -99,9 +137,53 @@ export class PlaybackEngine {
     return this.loopPromise !== null && !this.stopping;
   }
 
+  /** The canonical playback state. Position comes from the server clock and the track's start time. */
+  getState(): PlaybackState {
+    const cur = this.currentPlayback;
+    const now = this.d.options.now();
+    const ahead = this.timeline.anchor + this.timeline.sentSeconds * 1000 - now;
+    return {
+      status: this.status,
+      trackId: cur?.track.id ?? null,
+      startedAt: cur ? cur.startedAt.getTime() : null,
+      duration: cur?.track.duration ?? null,
+      position: cur ? computePosition(cur.startedAt, now, cur.track.duration) : 0,
+      bufferedSeconds: Math.max(0, ahead / 1000),
+      seq: cur?.seq ?? 0,
+    };
+  }
+
+  /** Observe what the engine does (metrics, logs, live views). Listener errors never affect playback. */
+  subscribe(listener: PlaybackListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emit(event: PlaybackEvent): void {
+    for (const l of [...this.listeners]) {
+      try {
+        l(event);
+      } catch (err) {
+        this.logger.warn({ msg: 'playback listener failed', err: String(err) });
+      }
+    }
+  }
+
+  /** Every byte on air goes through here: one place tracks the send time and how far ahead of real time the listeners are. */
+  private send(slice: Buffer): void {
+    const now = this.d.options.now();
+    this.lastAheadMs = Math.max(0, this.timeline.anchor + this.timeline.sentSeconds * 1000 - now);
+    this.lastSliceAt = now;
+    this.d.metrics?.recordBuffer(this.lastAheadMs / 1000);
+    this.d.broadcaster.push(slice);
+  }
+
   start(): void {
     if (this.loopPromise) return;
     this.stopping = false;
+    this.status = 'TRANSITIONING';
     this.loopPromise = this.loop().catch((err: unknown) => this.logger.error({ msg: 'playback loop crashed', err: String(err) }));
   }
 
@@ -112,6 +194,7 @@ export class PlaybackEngine {
     await this.loopPromise;
     this.loopPromise = null;
     await this.discardPlan();
+    this.status = 'STOPPED';
     this.d.broadcaster.endAll();
   }
 
@@ -222,13 +305,15 @@ export class PlaybackEngine {
     let audio: PrefetchedAudio | null = null;
     try {
       audio = new PrefetchedAudio(ad.open(ac.signal), o.prefetchBytes);
-      for await (const slice of pace(audio.bytes, { bytesPerSec: audio.bytesPerSec, burstSeconds: o.burstSeconds, sliceBytes: o.sliceBytes, now: o.now, sleep: o.sleep, signal: ac.signal, timeline: this.timeline })) {
+      for await (const slice of pace(audio.bytes, { bytesPerSec: audio.bytesPerSec, burstSeconds: o.burstSeconds, sliceBytes: o.sliceBytes, now: o.now, sleep: o.sleep, signal: ac.signal, timeline: this.timeline, ...this.paceHooks() })) {
         if (!started) {
           started = true;
           await this.d.state.setAd(this.d.channelId, ad.id, new Date(this.timeline.anchor + startSent * 1000));
+          this.status = 'AD';
+          this.emit({ type: 'ad-started', adId: ad.id });
           this.logger.log({ msg: 'ad started', channelId: this.d.channelId, adId: ad.id, name: ad.name, listeners: this.d.broadcaster.listenerCount });
         }
-        this.d.broadcaster.push(slice);
+        this.send(slice);
       }
     } catch (err) {
       this.logger.warn({ msg: 'ad playback failed; continuing with music', adId: ad.id, err: err instanceof Error ? err.message : String(err) });
@@ -236,10 +321,23 @@ export class PlaybackEngine {
       this.adAbort = null;
       await audio?.cancel().catch((e: unknown) => this.logger.warn({ msg: 'ad cancel failed', err: String(e) }));
       if (started) {
+        this.emit({ type: 'ad-ended', adId: ad.id });
+        this.status = 'TRANSITIONING';
         await this.d.state.setAd(this.d.channelId, null, null).catch((e: unknown) => this.logger.warn({ msg: 'clear ad failed', err: String(e) }));
         await ads.played(ad.id).catch((e: unknown) => this.logger.warn({ msg: 'ad play count failed', err: String(e) }));
       }
     }
+  }
+
+  private paceHooks(): { onUnderrun: () => void; onSourceRead: (bytes: number, ms: number) => void } {
+    return {
+      onUnderrun: () => {
+        this.d.metrics?.recordUnderrun();
+        this.status = 'BUFFERING';
+        this.logger.warn({ msg: 'buffer underrun: the audio source could not keep up', channelId: this.d.channelId });
+      },
+      onSourceRead: (bytes, ms) => this.d.metrics?.recordDownload(bytes, ms),
+    };
   }
 
   private idle(ms: number): Promise<void> {
@@ -265,6 +363,7 @@ export class PlaybackEngine {
         const p = await this.prepare(forced, (await this.d.state.get(this.d.channelId)).configurationVersion);
         if (p) return p;
       }
+      const exclude: string[] = [];
       if (this.plan) {
         const version = (await this.d.state.get(this.d.channelId)).configurationVersion;
         // The preselected track may have been disabled/removed since it was chosen.
@@ -274,20 +373,36 @@ export class PlaybackEngine {
           const p = this.plan;
           this.plan = null;
           await this.d.state.setNext(this.d.channelId, null);
-          return p;
+          const bad = await this.verify(p);
+          if (bad === null || (bad === 'FAILED' && isOutage(p.audio.failure))) return p; // an outage is handled (with back-off) by playOne
+          await this.rejectPlan(p, bad);
+          exclude.push(p.track.id);
+        } else {
+          await this.discardPlan();
         }
-        await this.discardPlan();
       }
-      const sel = await this.d.scheduler.selectNext(this.d.channelId);
-      if (!sel.trackId) {
-        await this.d.state.setStatus(this.d.channelId, sel.reason === 'RADIO_DISABLED' ? 'STOPPED' : 'IDLE', sel.reason);
-        this.logger.warn({ msg: 'nothing to play', reason: sel.reason });
-        await this.idle(this.d.options.idleRetryMs);
-        return null;
+      // Never block the radio on one broken track: try a few others right away.
+      for (let attempt = 0; attempt < MAX_SELECT_ATTEMPTS; attempt++) {
+        const sel = await this.d.scheduler.selectNext(this.d.channelId, exclude);
+        if (!sel.trackId) {
+          await this.d.state.setStatus(this.d.channelId, sel.reason === 'RADIO_DISABLED' ? 'STOPPED' : 'IDLE', sel.reason);
+          this.status = sel.reason === 'RADIO_DISABLED' ? 'STOPPED' : 'IDLE';
+          this.logger.warn({ msg: 'nothing to play', reason: sel.reason });
+          await this.idle(this.d.options.idleRetryMs);
+          return null;
+        }
+        const p = await this.prepare(sel.trackId, sel.configVersion);
+        if (!p) {
+          exclude.push(sel.trackId);
+          continue;
+        }
+        const bad = await this.verify(p);
+        if (bad === null || (bad === 'FAILED' && isOutage(p.audio.failure))) return p;
+        await this.rejectPlan(p, bad);
+        exclude.push(sel.trackId);
       }
-      const p = await this.prepare(sel.trackId, sel.configVersion);
-      if (!p) await this.idle(50);
-      return p;
+      await this.idle(50);
+      return null;
     } catch (err) {
       this.logger.error({ msg: 'failed to pick next track', err: err instanceof Error ? err.message : String(err) });
       await this.idle(Math.min(this.d.options.maxBackoffMs, 1000));
@@ -322,23 +437,63 @@ export class PlaybackEngine {
     if (this.plan || this.planPromise || this.forcedTrackId) return;
     this.planPromise = (async () => {
       try {
-        const sel = await this.d.scheduler.selectNext(this.d.channelId);
-        if (!sel.trackId) return;
-        const p = await this.prepare(sel.trackId, sel.configVersion);
-        if (!p) return;
-        if (this.stopping) {
-          p.ac.abort();
-          await p.audio.cancel();
-          return;
+        const exclude: string[] = [];
+        for (let attempt = 0; attempt < MAX_SELECT_ATTEMPTS; attempt++) {
+          const sel = await this.d.scheduler.selectNext(this.d.channelId, exclude);
+          if (!sel.trackId) return;
+          const p = await this.prepare(sel.trackId, sel.configVersion);
+          if (!p) {
+            exclude.push(sel.trackId);
+            continue;
+          }
+          if (this.stopping) {
+            p.ac.abort();
+            await p.audio.cancel();
+            return;
+          }
+          // The next track must be READY (first bytes in hand) before the current one ends; if it cannot be, pick another now.
+          const bad = await this.verify(p);
+          if (bad === null) {
+            this.plan = p;
+            await this.d.state.setNext(this.d.channelId, p.track.id);
+            return;
+          }
+          if (bad === 'FAILED' && isOutage(p.audio.failure)) {
+            p.ac.abort();
+            await p.audio.cancel().catch(() => undefined);
+            return; // Telegram itself is down: the transition (and its back-off) deals with it
+          }
+          await this.rejectPlan(p, bad);
+          exclude.push(sel.trackId);
         }
-        this.plan = p;
-        await this.d.state.setNext(this.d.channelId, p.track.id);
       } catch (err) {
         this.logger.warn({ msg: 'preselect failed; will select at transition', err: err instanceof Error ? err.message : String(err) });
       } finally {
         this.planPromise = null;
       }
     })();
+  }
+
+  /** Waits (bounded) for a prepared track's first bytes and sanity-checks them. Returns why it is unusable, or null. */
+  private async verify(p: Plan): Promise<'FAILED' | 'TIMEOUT' | 'CORRUPT' | null> {
+    const ready = await p.audio.whenReady(this.d.options.prefetchTimeoutMs ?? 15_000);
+    if (ready !== 'READY') return ready;
+    if (this.d.options.validateAudio) {
+      const head = p.audio.head(64 * 1024);
+      if (head.length > 0 && !hasMpegFrameSync(head)) return 'CORRUPT';
+    }
+    return null;
+  }
+
+  /** Throws a prepared track away. Broken audio counts against the track (it is disabled after repeated failures); a slow one does not. */
+  private async rejectPlan(p: Plan, reason: 'FAILED' | 'TIMEOUT' | 'CORRUPT'): Promise<void> {
+    this.d.metrics?.recordFailover();
+    if (reason === 'FAILED') this.d.metrics?.recordDownloadFailure();
+    this.logger.warn({ msg: 'prepared track rejected; choosing another', channelId: this.d.channelId, trackId: p.track.id, title: p.track.title, reason, err: reason === 'FAILED' ? String(p.audio.failure) : undefined });
+    this.emit({ type: 'prefetch-failover', trackId: p.track.id, reason });
+    p.ac.abort();
+    await p.audio.cancel().catch((e: unknown) => this.logger.warn({ msg: 'rejected plan cancel failed', err: String(e) }));
+    if (reason !== 'TIMEOUT') await this.d.tracks.recordPlaybackResult(p.track.id, false).catch((e: unknown) => this.logger.error({ msg: 'record result failed', err: String(e) }));
   }
 
   private async playOne(plan: Plan): Promise<'OK' | 'ERROR' | 'OUTAGE' | 'ABORTED'> {
@@ -361,25 +516,38 @@ export class PlaybackEngine {
         sleep: o.sleep,
         signal: ac.signal,
         timeline: this.timeline,
+        ...this.paceHooks(),
       })) {
         if (historyId === null) {
+          const gapMs = this.lastSliceAt === null ? null : this.d.options.now() - this.lastSliceAt;
+          if (gapMs !== null) {
+            const audible = gapMs > this.lastAheadMs;
+            this.d.metrics?.recordTransition(gapMs, audible);
+            this.emit({ type: 'transition', gapMs, audible });
+            if (audible) this.logger.warn({ msg: 'audible gap between tracks', channelId: this.d.channelId, gapMs, coveredMs: Math.round(this.lastAheadMs) });
+          }
           const startedAt = new Date(this.timeline.anchor + startSent * 1000);
           historyId = await this.d.history.start(track.id, startedAt);
           const seq = await this.d.state.beginTrack(this.d.channelId, track.id, historyId, startedAt);
           this.currentPlayback = { track, startedAt, historyId, seq, bytesPerSec: audio.bytesPerSec };
           this.tracksSinceAd++;
+          this.emit({ type: 'track-started', trackId: track.id, seq });
           this.logger.log({ msg: 'playback started', channelId: this.d.channelId, trackId: track.id, title: track.title, artist: track.artist, seq, listeners: this.d.broadcaster.listenerCount });
         }
         bytes += slice.length;
-        this.d.broadcaster.push(slice);
+        this.status = 'PLAYING';
+        this.send(slice);
         if (track.duration !== null && this.timeline.sentSeconds - startSent >= track.duration - o.preselectSeconds) this.planNext();
       }
       if (ac.signal.aborted) reason = this.abortReason ?? 'ADMIN';
       else if (bytes === 0) throw new Error('track produced no audio data');
     } catch (err) {
       failed = true;
-      outage = err instanceof TelegramNotReadyError || err instanceof TelegramFloodWaitError;
+      outage = isOutage(err);
       reason = 'ERROR';
+      this.d.metrics?.recordDownloadFailure();
+      if (historyId === null) this.d.metrics?.recordTransitionFailure();
+      this.status = outage ? 'ERROR' : 'TRANSITIONING';
       this.logger.error({ msg: outage ? 'telegram unavailable, cannot stream' : 'streaming error, skipping track', trackId: track.id, title: track.title, bytes, err: err instanceof Error ? err.message : String(err) });
     } finally {
       this.currentAbort = null;
@@ -388,6 +556,8 @@ export class PlaybackEngine {
     }
     if (!outage) await this.d.tracks.recordPlaybackResult(track.id, !failed).catch((e: unknown) => this.logger.error({ msg: 'record result failed', err: String(e) }));
     this.logger.log({ msg: 'playback ended', trackId: track.id, reason, bytes });
+    if (historyId) this.emit({ type: 'track-ended', trackId: track.id, reason });
+    if (this.status === 'PLAYING' || this.status === 'BUFFERING') this.status = 'TRANSITIONING';
     if (outage) return 'OUTAGE';
     return failed ? 'ERROR' : reason === 'FINISHED' ? 'OK' : 'ABORTED';
   }

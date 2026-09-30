@@ -8,7 +8,7 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { ConfigError, loadConfig, redactConfig } from './config/app-config';
 
-const API_PREFIXES = ['/admin', '/radio'];
+const API_PREFIXES = ['/admin', '/radio', '/metrics'];
 
 async function bootstrap(): Promise<void> {
   // Validate the environment before anything starts: never run half-configured.

@@ -98,7 +98,8 @@ describe('PlaybackEngine', () => {
     await h.engine.stop();
     expect(Buffer.concat(a.chunks).equals(Buffer.concat(b.chunks))).toBe(true);
     expect(c.chunks).toHaveLength(0);
-    expect(gw.downloadCalls.length).toBeLessThanOrEqual((await plays()) + 1); // one per play (+ possibly one unused prefetch)
+    // one per play (+ at most two unused prefetches in flight when stopping); per-listener downloads would be >= 2 x plays
+    expect(gw.downloadCalls.length).toBeLessThanOrEqual((await plays()) + 2);
     expect(h.broadcaster.listenerCount).toBe(0);
   });
 

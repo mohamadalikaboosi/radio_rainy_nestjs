@@ -32,11 +32,13 @@ export class RadioScheduler {
     private readonly override?: TagOverride,
   ) {}
 
-  async selectNext(channelId: string): Promise<NextSelection> {
+  /** `exclude`: tracks that must not be chosen now (e.g. a pre-fetched track that turned out broken). */
+  async selectNext(channelId: string, exclude: readonly string[] = []): Promise<NextSelection> {
     const cfg = await this.config.getSnapshot(channelId);
     if (!cfg.enabled) return { trackId: null, reason: 'RADIO_DISABLED', configVersion: cfg.version, result: null };
 
-    const [candidates, st] = await Promise.all([this.config.loadCandidates(channelId), this.state.get(channelId)]);
+    const [allCandidates, st] = await Promise.all([this.config.loadCandidates(channelId), this.state.get(channelId)]);
+    const candidates = exclude.length > 0 ? allCandidates.filter((c) => !exclude.includes(c.id)) : allCandidates;
     if (candidates.length === 0) return { trackId: null, reason: 'NO_PLAYABLE_TRACKS', configVersion: cfg.version, result: null };
 
     // Current track first, so "never immediately repeat" holds even with window = 0 semantics of history.

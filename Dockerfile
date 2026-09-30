@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3000 TMP_DIR=/tmp/radio_rainy ADMIN_UI_DIR=/app/admin
 WORKDIR /app/api
+# writable audio-cache volume for the non-root user (a named volume inherits this ownership)
+RUN mkdir -p /data/audio-cache && chown -R node:node /data
 COPY --from=build /out/api/ ./
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/admin/dist /app/admin

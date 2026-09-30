@@ -22,6 +22,10 @@ export interface PaceOptions {
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
   timeline?: Timeline;
+  /** The source could not keep up with real time (the schedule had to be shifted): a buffer underrun. */
+  onUnderrun?: () => void;
+  /** Bytes received from the source and how long we waited for them (excluding pacing sleeps): download speed. */
+  onSourceRead?: (bytes: number, waitedMs: number) => void;
 }
 
 export const realClock = {
@@ -47,20 +51,31 @@ export const realClock = {
 export async function* pace(source: AsyncIterable<Uint8Array>, opt: PaceOptions): AsyncGenerator<Buffer> {
   const tl = opt.timeline ?? newTimeline(opt.now());
   const burstMs = opt.burstSeconds * 1000;
-  for await (const chunk of source) {
-    for (let off = 0; off < chunk.length; off += opt.sliceBytes) {
-      if (opt.signal?.aborted) return;
-      const slice = Buffer.from(chunk.subarray(off, Math.min(chunk.length, off + opt.sliceBytes)));
-      const due = tl.anchor + tl.sentSeconds * 1000 - burstMs;
-      const wait = due - opt.now();
-      if (wait > 0) {
-        await opt.sleep(wait, opt.signal);
+  const it = source[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const askedAt = opt.now();
+      const next = await it.next();
+      if (next.done) return;
+      const chunk = next.value;
+      opt.onSourceRead?.(chunk.length, opt.now() - askedAt);
+      for (let off = 0; off < chunk.length; off += opt.sliceBytes) {
         if (opt.signal?.aborted) return;
-      } else if (-wait > burstMs) {
-        tl.anchor += -wait - burstMs; // we were starved (stall / idle): re-anchor instead of a catch-up flood
+        const slice = Buffer.from(chunk.subarray(off, Math.min(chunk.length, off + opt.sliceBytes)));
+        const due = tl.anchor + tl.sentSeconds * 1000 - burstMs;
+        const wait = due - opt.now();
+        if (wait > 0) {
+          await opt.sleep(wait, opt.signal);
+          if (opt.signal?.aborted) return;
+        } else if (-wait > burstMs) {
+          tl.anchor += -wait - burstMs; // we were starved (stall / idle): re-anchor instead of a catch-up flood
+          opt.onUnderrun?.();
+        }
+        tl.sentSeconds += slice.length / opt.bytesPerSec;
+        yield slice;
       }
-      tl.sentSeconds += slice.length / opt.bytesPerSec;
-      yield slice;
     }
+  } finally {
+    await it.return?.(undefined);
   }
 }

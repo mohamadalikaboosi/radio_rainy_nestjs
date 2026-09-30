@@ -1,5 +1,6 @@
 import { DatabaseService } from '../src/database/database.service';
 import { TrackAudioPipeline } from '../src/playback/audio-pipeline';
+import { StationMetrics } from '../src/metrics/radio-metrics';
 import { AdSource, EngineOptions, PlaybackEngine } from '../src/playback/playback-engine';
 import { PlaybackHistoryRepository } from '../src/playback/playback-history.repository';
 import { RadioConfigRepository } from '../src/radio/radio-config.repository';
@@ -35,7 +36,7 @@ export interface Harness {
 
 export const CHANNEL = '1001';
 
-export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over: Partial<EngineOptions> = {}, seed = 1, channelId = CHANNEL, ads?: AdSource): Harness {
+export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over: Partial<EngineOptions> = {}, seed = 1, channelId = CHANNEL, ads?: AdSource, metrics?: StationMetrics): Harness {
   const clock = new VirtualClock();
   const tracks = new TrackRepository(db);
   const history = new PlaybackHistoryRepository(db);
@@ -52,6 +53,7 @@ export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over:
     audio: new TrackAudioPipeline(gw, null, 128),
     broadcaster,
     ads,
+    metrics,
     options: {
       burstSeconds: 2,
       sliceBytes: 4000,

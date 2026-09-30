@@ -145,6 +145,10 @@ export interface ChannelItem {
   telegramLiveEnabled: boolean;
   liveStatus: 'OFF' | 'STARTING' | 'LIVE' | 'ERROR';
   liveError: string | null;
+  /** Manual Telegram live target (link + key); the key itself is never sent to the browser. */
+  liveRtmpUrl: string | null;
+  liveRtmpKeySet: boolean;
+  liveTargetRev: number;
 }
 export interface TelegramStatus {
   state: 'NOT_CONFIGURED' | 'NOT_LOGGED_IN' | 'CONNECTING' | 'AWAITING_CODE' | 'AWAITING_PASSWORD' | 'READY' | 'DISCONNECTED' | 'ERROR';
@@ -180,4 +184,87 @@ export interface LiveStation {
   nowPlaying: (LiveTrack & { startedAt: string; position: number; lyricsStatus: string; activeLine: string | null }) | null;
   upNext: (LiveTrack & { queued: boolean }) | null;
   recent: { trackId: string; title: string; artist: string | null; startedAt: string; endReason: string | null }[];
+}
+
+/** Uploads a file as the raw request body (Content-Type = the file's type), like `PUT /admin/ads/:id/audio`. */
+export async function uploadFile<T>(path: string, file: Blob & { name?: string }, contentType?: string): Promise<T> {
+  const token = authStore.get();
+  const res = await fetch(path, { method: 'PUT', headers: { 'Content-Type': contentType ?? (file.type || 'application/octet-stream'), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: file });
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    if (res.status === 401) {
+      authStore.clear();
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
+    const msg = typeof data === 'object' && data !== null && 'message' in data ? String((data as { message: unknown }).message) : `HTTP ${res.status}`;
+    throw new ApiError(res.status, msg, data);
+  }
+  return data as T;
+}
+
+// ---- ads, sponsors, engagement ----
+export interface AdItem {
+  id: string;
+  channelId: string | null;
+  name: string;
+  weight: number;
+  enabled: boolean;
+  linkUrl: string | null;
+  ctaLabel: string | null;
+  hasAudio: boolean;
+  audioMime: string | null;
+  audioSize: number | null;
+  durationSeconds: number | null;
+  hasImage: boolean;
+  plays: number;
+  clicks: number;
+  lastPlayedAt: string | null;
+  createdAt: string;
+}
+export interface SponsorItem {
+  id: string;
+  channelId: string | null;
+  name: string;
+  tagline: string | null;
+  url: string;
+  ctaLabel: string;
+  hasLogo: boolean;
+  weight: number;
+  enabled: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  impressions: number;
+  clicks: number;
+}
+export interface EngagementSettings {
+  adsEveryNTracks: number;
+  tagVoteEnabled: boolean;
+  tagVoteIntervalMinutes: number;
+  tagVotePollMinutes: number;
+  tagVotePlayMinutes: number;
+  tagVoteOptions: number;
+  tagVoteAllowlist: string[];
+}
+export interface VoteView {
+  status: 'NONE' | 'OPEN' | 'PLAYING';
+  poll?: { id: string; options: { hashtag: string; votes: number }[]; closesAt: string; totalVotes: number };
+  winner?: string;
+  playUntil?: string;
+  myVote?: string | null;
+  serverTime: string;
+}
+export interface PollHistoryItem {
+  id: string;
+  options: string[];
+  opensAt: string;
+  closesAt: string;
+  status: 'OPEN' | 'CLOSED';
+  winner: string | null;
+  playUntil: string | null;
+  tally: Record<string, number>;
 }

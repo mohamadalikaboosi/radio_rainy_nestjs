@@ -53,3 +53,18 @@ export function inspectMp3(data: Uint8Array): Mp3Info | null {
   }
   return null;
 }
+
+/** True when `data` contains a plausible MPEG audio frame header (used to spot garbage/corrupt downloads before they go on air). */
+export function hasMpegFrameSync(data: Uint8Array, scanBytes = 64 * 1024): boolean {
+  const end = Math.min(data.length - 3, scanBytes);
+  for (let i = 0; i < end; i++) {
+    if (data[i] !== 0xff) continue;
+    const b1 = data[i + 1] ?? 0;
+    const b2 = data[i + 2] ?? 0;
+    if ((b1 & 0xe0) !== 0xe0) continue;
+    if (((b1 >> 3) & 3) === 1 || ((b1 >> 1) & 3) === 0) continue; // reserved version / layer
+    if (b2 >> 4 === 15 || ((b2 >> 2) & 3) === 3) continue; // bad bitrate / sample-rate index
+    return true;
+  }
+  return false;
+}

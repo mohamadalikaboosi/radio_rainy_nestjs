@@ -117,10 +117,12 @@ describe('PlaybackEngine ads', () => {
   });
 
   it('skip cuts the ad and the music continues', async () => {
+    let frozen = false;
+    h = buildHarness(db, gw, { sleep: async (ms, signal) => (frozen ? new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true })) : h.clock.sleep(ms, signal)) }, 1, '1001', ads);
     const slow: PlayableAd = {
       id: AD_ID,
       name: 'slow',
-      open: (signal) => ({
+      open: (signal) => ((frozen = true), {
         bytes: (async function* () {
           for (let i = 0; i < 100 && !signal.aborted; i++) yield Buffer.alloc(20000, AD_BYTE);
         })(),
@@ -133,6 +135,7 @@ describe('PlaybackEngine ads', () => {
     h.engine.start();
     await waitFor(() => seconds(chunks).includes(AD_BYTE));
     expect(h.engine.skip()).toBe('SKIPPED');
+    frozen = false; // let time run again after the cut
     await waitFor(() => {
       const seq = seconds(chunks);
       const first = seq.indexOf(AD_BYTE);

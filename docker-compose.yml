@@ -15,6 +15,11 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      AUDIO_CACHE_DIR: /data/audio-cache
+      AUDIO_CACHE_MAX_MB: ${AUDIO_CACHE_MAX_MB:-1024}
+      RADIO_PREFETCH_SECONDS: ${RADIO_PREFETCH_SECONDS:-30}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    volumes: ["audio-cache:/data/audio-cache"]
     ports: ["${APP_PORT:-3000}:3000"]
   postgres:
     image: postgres:16
@@ -41,3 +46,4 @@ volumes:
   pg-data:
   redis-data:
   minio-data:
+  audio-cache:
