@@ -11,26 +11,39 @@ interface Active { index: number; text: string | null; status: string; trackId?:
 export function Player() {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
-  const current = useAsync(() => api<Current>('/radio/current'), [], 1000);
+  const stations = useAsync(() => api<{ slug: string; title: string; live: boolean }[]>('/radio/stations'), [], 10_000);
+  const [picked, setPicked] = useState<string | null>(null);
+  const slug = picked ?? stations.data?.find((s) => s.live)?.slug ?? stations.data?.[0]?.slug ?? null;
+  const base = slug ? `/radio/${slug}` : null;
+  const current = useAsync(() => (base ? api<Current>(`${base}/current`) : Promise.resolve(null)), [base], 1000);
   const trackId = current.data?.trackId;
-  const lyrics = useAsync(() => (trackId ? api<Lyrics>('/radio/current/lyrics') : Promise.resolve(null)), [trackId]);
-  const active = useAsync(() => api<Active>('/radio/current/lyrics/active'), [], 500);
+  const lyrics = useAsync(() => (base && trackId ? api<Lyrics>(`${base}/current/lyrics`) : Promise.resolve(null)), [base, trackId]);
+  const active = useAsync(() => (base ? api<Active>(`${base}/current/lyrics/active`) : Promise.resolve(null)), [base], 500);
   const activeRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [active.data?.index]);
 
-  const toggle = (): void => {
+  const stop = (): void => {
     const el = audio.current;
     if (!el) return;
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
+    setPlaying(false);
+  };
+
+  const toggle = (): void => {
+    const el = audio.current;
+    if (!el || !base) return;
     if (playing) {
       el.pause();
       el.removeAttribute('src'); // drop the buffer: resume joins the live edge instead of stale audio
       el.load();
       setPlaying(false);
     } else {
-      el.src = `/radio/stream?ts=${Date.now()}`;
+      el.src = `${base}/stream?ts=${Date.now()}`;
       void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     }
   };
@@ -40,7 +53,15 @@ export function Player() {
   return (
     <main className="player">
       <h1>🌧 radio_rainy</h1>
-      <button className="btn btn-primary btn-big" onClick={toggle} aria-pressed={playing}>{playing ? '⏸ Pause' : '▶ Listen live'}</button>
+      {stations.data && stations.data.length > 1 && (
+        <label>Station
+          <select value={slug ?? ''} onChange={(e) => { stop(); setPicked(e.target.value); }} aria-label="station">
+            {stations.data.map((s) => <option key={s.slug} value={s.slug}>{s.title}{s.live ? '' : ' (offline)'}</option>)}
+          </select>
+        </label>
+      )}
+      {stations.data && stations.data.length === 0 && <p className="muted">No station is on air yet.</p>}
+      <button className="btn btn-primary btn-big" onClick={toggle} aria-pressed={playing} disabled={!base}>{playing ? '⏸ Pause' : '▶ Listen live'}</button>
       <audio ref={audio} preload="none" />
       {c?.status === 'PLAYING' ? (
         <>

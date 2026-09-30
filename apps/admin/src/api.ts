@@ -87,6 +87,7 @@ export interface TrackItem {
   status: string;
   playCount: number;
   lastPlayedAt: string | null;
+  channelId: string;
   telegramMessageId: number;
   telegramPostUrl: string | null;
   lyricsUrl: string | null;
@@ -134,8 +135,19 @@ export interface PreviewResult {
   eligibleCount: number;
   tracks: { id: string; title: string; artist: string | null; hashtags: string[]; reason: string }[];
 }
+export interface ChannelItem {
+  id: string;
+  reference: string;
+  title: string;
+  username: string | null;
+  slug: string;
+  started: boolean;
+  telegramLiveEnabled: boolean;
+  liveStatus: 'OFF' | 'STARTING' | 'LIVE' | 'ERROR';
+  liveError: string | null;
+}
 export interface TelegramStatus {
-  state: 'NOT_LOGGED_IN' | 'CONNECTING' | 'AWAITING_CODE' | 'AWAITING_PASSWORD' | 'READY' | 'DISCONNECTED' | 'ERROR';
+  state: 'NOT_CONFIGURED' | 'NOT_LOGGED_IN' | 'CONNECTING' | 'AWAITING_CODE' | 'AWAITING_PASSWORD' | 'READY' | 'DISCONNECTED' | 'ERROR';
   accountLabel: string | null;
   error?: string;
 }

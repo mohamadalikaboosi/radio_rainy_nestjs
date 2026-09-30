@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ConfigView } from '../api';
+import { ChannelItem, ConfigView } from '../api';
+import { ChannelContext } from '../channel-context';
 import { RadioConfig, draftFrom, toUpdateBody } from './RadioConfig';
 
 const config: ConfigView = {
@@ -19,6 +20,13 @@ function mockApi(handlers: Record<string, (init: RequestInit) => unknown>) {
   });
 }
 
+const channel: ChannelItem = { id: '1001', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null };
+const withChannel = (ui: React.ReactElement) => (
+  <MemoryRouter>
+    <ChannelContext.Provider value={{ channels: [channel], selected: channel, loading: false, select: () => undefined, reload: () => undefined }}>{ui}</ChannelContext.Provider>
+  </MemoryRouter>
+);
+
 describe('toUpdateBody', () => {
   it('serializes the draft; selection stays server-side', () => {
     const d = { ...draftFrom(config), mode: 'HASHTAG_RANDOM' as const, selected: ['rain', 'night'], weights: { rain: 50 } };
@@ -34,11 +42,11 @@ describe('<RadioConfig />', () => {
   it('shows hashtags for Hashtag Random and saves with the current version for the next track', async () => {
     let put: Record<string, unknown> | null = null;
     mockApi({
-      'GET /admin/radio/config': () => config,
+      'GET /admin/channels/1001/radio/config': () => config,
       'GET /admin/hashtags': () => tags,
-      'PUT /admin/radio/config': (init) => { put = JSON.parse(String(init.body)); return { ...config, version: 8 }; },
+      'PUT /admin/channels/1001/radio/config': (init) => { put = JSON.parse(String(init.body)); return { ...config, version: 8 }; },
     });
-    render(<MemoryRouter><RadioConfig /></MemoryRouter>);
+    render(withChannel(<RadioConfig />));
     fireEvent.click(await screen.findByLabelText(/Hashtag Random/));
     fireEvent.click(await screen.findByLabelText(/#Rain/));
     fireEvent.click(screen.getByLabelText(/ALL selected hashtags/));
@@ -50,9 +58,9 @@ describe('<RadioConfig />', () => {
 
   it('"Apply immediately" asks for confirmation first', async () => {
     const put = vi.fn(() => ({ ...config, version: 8 }));
-    mockApi({ 'GET /admin/radio/config': () => config, 'GET /admin/hashtags': () => tags, 'PUT /admin/radio/config': put });
+    mockApi({ 'GET /admin/channels/1001/radio/config': () => config, 'GET /admin/hashtags': () => tags, 'PUT /admin/channels/1001/radio/config': put });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<MemoryRouter><RadioConfig /></MemoryRouter>);
+    render(withChannel(<RadioConfig />));
     fireEvent.click(await screen.findByText('Apply immediately'));
     expect(confirm).toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
@@ -63,11 +71,11 @@ describe('<RadioConfig />', () => {
 
   it('shows a conflict banner when another admin changed the config (409)', async () => {
     mockApi({
-      'GET /admin/radio/config': () => config,
+      'GET /admin/channels/1001/radio/config': () => config,
       'GET /admin/hashtags': () => tags,
-      'PUT /admin/radio/config': () => ({ __status: 409, message: 'Radio configuration was changed by someone else' }),
+      'PUT /admin/channels/1001/radio/config': () => ({ __status: 409, message: 'Radio configuration was changed by someone else' }),
     });
-    render(<MemoryRouter><RadioConfig /></MemoryRouter>);
+    render(withChannel(<RadioConfig />));
     fireEvent.click(await screen.findByText('Apply for next track'));
     expect(await screen.findByText(/Another admin changed the configuration/)).toBeInTheDocument();
   });
@@ -75,11 +83,11 @@ describe('<RadioConfig />', () => {
   it('preview calls the backend engine with the draft (no client-side selection)', async () => {
     let body: Record<string, unknown> | null = null;
     mockApi({
-      'GET /admin/radio/config': () => config,
+      'GET /admin/channels/1001/radio/config': () => config,
       'GET /admin/hashtags': () => tags,
-      'POST /admin/radio/preview': (init) => { body = JSON.parse(String(init.body)); return { seed: 42, mode: 'GLOBAL_RANDOM', eligibleCount: 5, tracks: [{ id: 'a', title: 'Song A', artist: 'X', hashtags: ['rain'], reason: 'GLOBAL_RANDOM' }] }; },
+      'POST /admin/channels/1001/radio/preview': (init) => { body = JSON.parse(String(init.body)); return { seed: 42, mode: 'GLOBAL_RANDOM', eligibleCount: 5, tracks: [{ id: 'a', title: 'Song A', artist: 'X', hashtags: ['rain'], reason: 'GLOBAL_RANDOM' }] }; },
     });
-    render(<MemoryRouter><RadioConfig /></MemoryRouter>);
+    render(withChannel(<RadioConfig />));
     fireEvent.click(await screen.findByText('Preview selection'));
     expect(await screen.findByText(/Song A/)).toBeInTheDocument();
     expect(body).toMatchObject({ mode: 'GLOBAL_RANDOM', limit: 10 });

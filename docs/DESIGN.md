@@ -357,3 +357,12 @@ The design above was approved with the following answers and then implemented; w
 * **Telegram session**: created from the panel (phone/code/2FA) and stored **encrypted (AES-256-GCM)** in `telegram_session`; `TELEGRAM_SESSION` env is only an optional bootstrap.
 * **Custom rules**: strict priority; rules sharing a priority form a tier where `weight` applies. Track weight across several weighted hashtags = **max**.
 * **Extra**: public player page (`/`), admin panel (`/panel`) served by the API, audit log with secret scrubbing, hashtag stats table refreshed every 60 s.
+
+### Update: multi-channel, panel-managed settings, live stream, language layer
+
+* **Stations**: one `channels` row per Telegram channel (key = Telegram channel id). `radio_configuration`, `radio_hashtag_selection`, `radio_rules`, `radio_state` are per channel; tracks are scoped by `telegram_channel_id`. The leader's `StationManager` runs one `PlaybackEngine` + `Broadcaster` (+ optional `TelegramLiveStreamer`) per started channel and reconciles with the DB on `stations-changed`.
+* **Settings**: `app_settings` (plain JSONB + one AES-256-GCM ciphertext for secrets, context-bound AAD). Telegram API id/hash, Whisper and LLM settings are edited in the panel; env is a fallback.
+* **Live in Telegram**: RTMP ingest through MTProto (`phone.createGroupCall`/`getGroupCallStreamRtmpUrl`), ffmpeg publisher, backoff, status on the channel row.
+* **Whisper input**: mono FLAC at a configurable sample rate (default 48 kHz).
+* **Language layer**: script-based fa/en detection, per-language learned lexicon (`lexicon_entries`), optional OpenAI-compatible LLM review, retrain and JSONL export. Statistical learning only; no in-app neural fine-tuning.
+

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { HashtagStat, RuleView, api } from '../api';
+import { NeedChannel, radioPath } from '../channel-context';
 import { errorMessage, useAsync } from '../hooks';
 import { ActionButton, Badge, Card, ErrorBox, HashtagChecklist } from '../ui';
 
@@ -17,7 +18,11 @@ interface RuleForm {
 const empty: RuleForm = { name: '', priority: 1, matchMode: 'ANY', weight: 1, enabled: true, include: [], exclude: [] };
 
 export function Rules() {
-  const cfg = useAsync(() => api<{ version: number; rules: RuleView[] }>('/admin/radio/config'), []);
+  return <NeedChannel>{(c) => <RulesFor key={c.id} channelId={c.id} title={c.title} />}</NeedChannel>;
+}
+
+function RulesFor({ channelId, title }: { channelId: string; title: string }) {
+  const cfg = useAsync(() => api<{ version: number; rules: RuleView[] }>(radioPath(channelId, 'config')), [channelId]);
   const tags = useAsync(() => api<{ items: HashtagStat[] }>('/admin/hashtags'), []);
   const [form, setForm] = useState<RuleForm | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +33,8 @@ export function Rules() {
     setError(null);
     const { id, ...body } = form;
     try {
-      if (id) await api(`/admin/radio/rules/${id}`, { method: 'PUT', body });
-      else await api('/admin/radio/rules', { method: 'POST', body });
+      if (id) await api(radioPath(channelId, `rules/${id}`), { method: 'PUT', body });
+      else await api(radioPath(channelId, 'rules'), { method: 'POST', body });
       setForm(null);
       cfg.reload();
     } catch (err) {
@@ -42,7 +47,7 @@ export function Rules() {
 
   return (
     <div className="stack">
-      <Card title="Radio rules" actions={<button className="btn btn-primary" onClick={() => setForm({ ...empty, priority: (rules.at(-1)?.priority ?? 0) + 1 })}>+ New rule</button>}>
+      <Card title={`Radio rules — ${title}`} actions={<button className="btn btn-primary" onClick={() => setForm({ ...empty, priority: (rules.at(-1)?.priority ?? 0) + 1 })}>+ New rule</button>}>
         <p className="muted">Used in “Custom Rules” mode. Rules are evaluated by priority (lowest number first); the first rule that has playable tracks wins. Rules sharing a priority form a tier and are weighted against each other.</p>
         <ErrorBox error={cfg.error} />
         <table>
@@ -59,7 +64,7 @@ export function Rules() {
                 <td><Badge tone={r.enabled ? 'good' : 'neutral'}>{r.enabled ? 'yes' : 'no'}</Badge></td>
                 <td className="row">
                   <button className="btn btn-small" onClick={() => setForm({ ...r })}>Edit</button>
-                  <ActionButton className="btn-small btn-danger" confirm={`Delete rule "${r.name}"?`} onAction={async () => { await api(`/admin/radio/rules/${r.id}`, { method: 'DELETE' }); cfg.reload(); }}>Delete</ActionButton>
+                  <ActionButton className="btn-small btn-danger" confirm={`Delete rule "${r.name}"?`} onAction={async () => { await api(radioPath(channelId, `rules/${r.id}`), { method: 'DELETE' }); cfg.reload(); }}>Delete</ActionButton>
                 </td>
               </tr>
             ))}

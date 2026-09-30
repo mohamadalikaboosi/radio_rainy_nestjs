@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ApiError, ConfigView, HashtagStat, PreviewResult, RadioMode, api } from '../api';
+import { NeedChannel, radioPath } from '../channel-context';
 import { errorMessage, useAsync } from '../hooks';
 import { ActionButton, Badge, Card, ErrorBox, HashtagChecklist } from '../ui';
 
@@ -46,7 +47,7 @@ const MODES: { value: RadioMode; label: string; hint: string }[] = [
   { value: 'CUSTOM_RULE', label: 'Custom Rules', hint: 'Prioritized rules (see Rules page).' },
 ];
 
-export function PreviewPanel({ draft }: { draft: Draft }) {
+export function PreviewPanel({ draft, channelId }: { draft: Draft; channelId: string }) {
   const [seed, setSeed] = useState('');
   const [limit, setLimit] = useState(10);
   const [result, setResult] = useState<PreviewResult | null>(null);
@@ -56,7 +57,7 @@ export function PreviewPanel({ draft }: { draft: Draft }) {
     setError(null);
     try {
       setResult(
-        await api<PreviewResult>('/admin/radio/preview', {
+        await api<PreviewResult>(radioPath(channelId, 'preview'), {
           method: 'POST',
           body: {
             mode: draft.mode,
@@ -100,7 +101,11 @@ export function PreviewPanel({ draft }: { draft: Draft }) {
 }
 
 export function RadioConfig() {
-  const cfg = useAsync(() => api<ConfigView>('/admin/radio/config'), []);
+  return <NeedChannel>{(c) => <RadioConfigFor key={c.id} channelId={c.id} title={c.title} />}</NeedChannel>;
+}
+
+function RadioConfigFor({ channelId, title }: { channelId: string; title: string }) {
+  const cfg = useAsync(() => api<ConfigView>(radioPath(channelId, 'config')), [channelId]);
   const tags = useAsync(() => api<{ items: HashtagStat[] }>('/admin/hashtags'), []);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -118,7 +123,7 @@ export function RadioConfig() {
     setSaved(null);
     setConflict(false);
     try {
-      const updated = await api<ConfigView>('/admin/radio/config', { method: 'PUT', body: toUpdateBody(draft, cfg.data?.version ?? 0, mode) });
+      const updated = await api<ConfigView>(radioPath(channelId, 'config'), { method: 'PUT', body: toUpdateBody(draft, cfg.data?.version ?? 0, mode) });
       setSaved(`Saved as version ${updated.version} (${mode === 'IMMEDIATE' ? 'applied immediately' : 'applies from the next track'}).`);
       cfg.reload();
     } catch (e) {
@@ -137,7 +142,7 @@ export function RadioConfig() {
 
   return (
     <div className="stack">
-      <Card title="Radio configuration" actions={<Badge tone="info">version {cfg.data.version}</Badge>}>
+      <Card title={`Radio configuration — ${title}`} actions={<Badge tone="info">version {cfg.data.version}</Badge>}>
         <fieldset>
           <legend>Selection mode</legend>
           {MODES.map((m) => (
@@ -195,7 +200,7 @@ export function RadioConfig() {
           <ActionButton className="btn-danger" confirm="This stops the current track and selects a new one right now. Continue?" onAction={apply('IMMEDIATE')}>Apply immediately</ActionButton>
         </div>
       </Card>
-      <PreviewPanel draft={draft} />
+      <PreviewPanel draft={draft} channelId={channelId} />
     </div>
   );
 }

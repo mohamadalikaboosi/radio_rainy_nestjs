@@ -21,6 +21,9 @@ a { color: var(--accent); } code, .pre { font-family: ui-monospace, monospace; f
 .side { background: var(--surface); border-right: 1px solid var(--border); padding: 1rem .75rem; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow: auto; }
 .side a { padding: .4rem .6rem; border-radius: 6px; color: var(--text); text-decoration: none; }
 .side a.active { background: var(--info-bg); color: var(--info); font-weight: 600; } .side a:hover { background: var(--bg); }
+.grow { flex: 1 1 260px; }
+.row-selected { background: var(--info-bg); }
+.picker { padding: .25rem .6rem .75rem; } .picker select { width: 100%; }
 .brand { font-weight: 700; padding: .25rem .6rem 1rem; }
 .content { padding: 1.25rem; max-width: 1200px; width: 100%; }
 .stack { display: flex; flex-direction: column; gap: 1rem; }

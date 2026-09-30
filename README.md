@@ -15,59 +15,72 @@ Telegram ─► TelegramClient ─► Track discovery ─► Postgres ◄── 
 
 ## Quick start
 
-Requirements: Node 22+, pnpm, PostgreSQL 16, Redis 7, **ffmpeg** (non-MP3 tracks + Whisper preprocessing).
+Requirements: Node 22+, pnpm, PostgreSQL 16, Redis 7, **ffmpeg** (non-MP3 tracks, Whisper preprocessing, live stream in Telegram).
 
 ```bash
 pnpm install
 docker compose up -d                     # postgres + redis (or use your own)
-cp .env.example .env                     # then fill it in (see below)
+cp .env.example .env                     # fill the REQUIRED block (5 values), nothing else is needed
 pnpm --silent --filter @radio_rainy/api hash-password 'your-admin-password'   # -> ADMIN_PASSWORD_HASH
-openssl rand -hex 32                     # -> TELEGRAM_SESSION_ENCRYPTION_KEY
-openssl rand -hex 32                     # -> JWT_SECRET
-pnpm --filter @radio_rainy/admin build   # builds the panel + player (served by the API)
-pnpm --filter @radio_rainy/api build && set -a && . ./.env && set +a && node apps/api/dist/main.js
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"     # -> TELEGRAM_SESSION_ENCRYPTION_KEY, and again for JWT_SECRET
+pnpm build
+node --env-file=.env apps/api/dist/main.js        # or, for development:  pnpm dev:api  +  pnpm dev:admin
 ```
 
-* Player: `http://localhost:3000/`  · Admin panel: `http://localhost:3000/panel`
-* **Log in to Telegram from the panel** (Telegram page): phone → code → 2FA password (if any). The session is stored **encrypted (AES-256-GCM)** in the database — a session string cannot be hashed because the client needs the original; passwords (admin) are hashed with scrypt.
-* Then press *Full re-sync*. Tracks, hashtags and lyrics jobs appear automatically.
+Everything else is configured **in the admin panel** (`http://localhost:3000/panel`), no redeploy needed:
 
-### Configuration
+1. **Settings** → Telegram API ID + hash (from https://my.telegram.org). The hash is stored **encrypted** in the database and is write-only.
+2. **Telegram** → log in: phone → code → 2FA password. The session is stored encrypted (AES-256-GCM) — a session string cannot be *hashed* because the client needs the original; admin passwords are hashed with scrypt.
+3. **Channels** → add one or more channels (`@username`, `t.me` link or id). **Each channel is its own radio station** (own tracks, hashtags, rules, config, history, stream `/radio/<slug>/stream`). Press **Start** to put a station on air.
+4. Optional: **Stream inside Telegram** (toggle per channel) also publishes the station to the channel's live stream / voice chat, so the music plays in Telegram too (see below).
+5. Optional: **Settings** → Whisper (URL/model/language/sample rate) and LLM.
 
-| Variable | Required | Notes |
-|---|---|---|
-| `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | ✅ | from https://my.telegram.org |
-| `TELEGRAM_CHANNEL` | ✅ | `@username`, invite/`t.me` link or numeric id |
-| `TELEGRAM_SESSION_ENCRYPTION_KEY` | ✅ | 64 hex chars |
-| `TELEGRAM_SESSION` | – | optional bootstrap only (imported once, encrypted) |
-| `DATABASE_URL`, `REDIS_URL` | ✅ | Redis: BullMQ jobs + pub/sub for admin commands |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET` | ✅ | `JWT_SECRET` ≥ 32 chars |
-| `RADIO_RECENT_TRACK_WINDOW` | – | default 10 (initial value; later managed in the panel) |
-| `RADIO_PREBUFFER_SECONDS` | – | default **2**. Lower = lower latency, higher = more resilient |
-| `RADIO_STREAM_BITRATE_KBPS` | – | default 128 (transcoded non-MP3 + fallback rate) |
-| `WHISPER_URL`, `WHISPER_MODEL`, `WHISPER_API_KEY`, `WHISPER_LANGUAGE` | – | **all optional**. Without `WHISPER_URL` AI sync is simply off (no errors); plain lyrics still work |
-| `LYRICS_CACHE_TTL` | – | seconds, default 86400 |
-| `QUEUE_PREFIX`, `TELEGRAM_SYNC_INTERVAL_SECONDS`, `FFMPEG_PATH`, `TMP_DIR`, `ADMIN_UI_DIR`, `LOG_LEVEL`, `PORT` | – | see `.env.example` |
+* Player: `http://localhost:3000/` (station picker + live synchronized lyrics) · Admin panel: `http://localhost:3000/panel`
 
-The app **refuses to start** with an invalid/missing required configuration and lists every problem. Secrets are never logged (pino redaction + config redaction).
+### Configuration (environment)
+
+Only these are **required**: `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_SESSION_ENCRYPTION_KEY` (encrypts all stored secrets), `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET` (≥ 32 chars).
+Telegram API id/hash, Whisper and LLM settings are stored in the DB (panel); the matching `TELEGRAM_API_*` / `WHISPER_*` env vars are just an optional fallback. Tuning: `RADIO_PREBUFFER_SECONDS` (default **2**, lower = lower latency), `RADIO_STREAM_BITRATE_KBPS`, `RADIO_RECENT_TRACK_WINDOW` (default for *new* channels), `WHISPER_SAMPLE_RATE` (default **48000**), `LYRICS_CACHE_TTL`, `TELEGRAM_SYNC_INTERVAL_SECONDS`, `QUEUE_PREFIX`, `FFMPEG_PATH`, `TMP_DIR`, `ADMIN_UI_DIR`, `LOG_LEVEL`, `PORT` — see `.env.example`.
+
+The app **refuses to start** with an invalid/missing required configuration and lists every problem. Secrets are never logged (pino redaction + config redaction) and never returned by any API.
+
+### Telegram live stream (music inside Telegram)
+
+With *Stream inside Telegram* enabled on a started channel, the leader asks Telegram (MTProto `phone.createGroupCall` with `rtmp_stream` + `phone.getGroupCallStreamRtmpUrl`) for the channel's RTMP ingest and pushes the radio audio there with ffmpeg (MP3 in → AAC 48 kHz + a still video frame, as Telegram requires video). It reconnects with backoff and shows `LIVE` / `ERROR` (+ reason, e.g. `CHAT_ADMIN_REQUIRED`) on the Channels page.
+Requirements: the logged-in account is an **admin of the channel with the "Manage Live Streams" right**, and ffmpeg is installed.
+
+### Whisper input: 48 kHz
+
+Every track is converted (ffmpeg) to **mono FLAC at 48 kHz** (configurable in Settings) before it is sent to Whisper. Note: Whisper models resample to 16 kHz internally, so a higher rate does not improve accuracy by itself; it is supported because it was requested and costs only bandwidth.
+
+### Persian / English learning ("trainable" language layer)
+
+* **Language detection** per track from the lyrics' script (Persian `fa` / English `en` / `mixed`) → the right Whisper `language` hint is sent per song.
+* **Learned lexicon** (`Language` page): while aligning, the system records spelling differences between what Whisper wrote and what the official lyrics say (`cuz → because`, colloquial Persian forms, …) separately for fa/en. A pair is trusted after it is seen in 2 songs (or approved by an admin / the LLM) and then makes future alignments more accurate. **Re-train** re-aligns already transcribed songs with what has been learned, without calling Whisper again.
+* **LLM review** (optional, Settings → LLM; any OpenAI-compatible endpoint such as local Ollama): approves/rejects learned spellings in bulk.
+* **Dataset export** (`GET /admin/language/export`, JSONL: lyrics + ASR segments + timed lines) for fine-tuning a speech model *outside* this app.
+* What this is **not**: the app does not fine-tune neural model weights itself (that needs GPUs and a training pipeline). It learns a corrections lexicon from your data and exports a training set.
 
 ## Public API
 
 | Endpoint | |
 |---|---|
-| `GET /radio/stream` | continuous `audio/mpeg`; one Telegram download per track shared by all listeners |
-| `GET /radio/current` | `{status, trackId, title, artist, startedAt, duration, position, serverTime}` |
-| `GET /radio/current/lyrics` | `{trackId, status: READY\|PENDING\|PROCESSING\|FAILED\|NONE\|PLAIN, lines:[{start,end,text}]}` |
-| `GET /radio/current/lyrics/active` | `{index, start, end, text, position}` (`index: -1` when nothing is sung) |
+| `GET /radio/stations` | started stations: `[{slug, title, live}]` |
+| `GET /radio/:slug/stream` | continuous `audio/mpeg` for one station; one Telegram download per track shared by all listeners |
+| `GET /radio/:slug/current` | `{status, trackId, title, artist, startedAt, duration, position, serverTime}` |
+| `GET /radio/:slug/current/lyrics` | `{trackId, status: READY\|PENDING\|PROCESSING\|FAILED\|NONE\|PLAIN, lines:[{start,end,text}]}` |
+| `GET /radio/:slug/current/lyrics/active` | `{index, start, end, text, position}` (`index: -1` when nothing is sung) |
+
+The unprefixed `/radio/stream`, `/radio/current`, … remain and serve the default station (first started channel).
 
 ## Admin API (`Authorization: Bearer <jwt>`, SUPER_ADMIN enforced server-side on every route)
 
-`POST /admin/auth/login` · `GET /admin/dashboard` · `POST /admin/sync` · `GET /admin/tracks` (search + filters) · `GET /admin/tracks/:id` · `PATCH /admin/tracks/:id/enabled` · `POST /admin/tracks/:id/process-lyrics` · `POST /admin/tracks/:id/refresh-metadata` · `GET /admin/hashtags`, `/stats` · `GET|PUT /admin/radio/config` · `POST|PUT|DELETE /admin/radio/rules` · `POST /admin/radio/preview` · `POST /admin/radio/skip`, `/play-next` · `GET /admin/radio/history` · `GET /admin/audit` · `GET /admin/telegram/status` · `POST /admin/telegram/login/{start,code,password,cancel}` · `POST /admin/telegram/logout`
+`POST /admin/auth/login` · `GET /admin/dashboard` · **channels**: `GET|POST /admin/channels`, `DELETE /admin/channels/:cid[?deleteTracks=true]`, `POST /admin/channels/:cid/{start,stop,sync}`, `PUT /admin/channels/:cid/live` · **per-channel radio** under `/admin/channels/:cid/radio/`: `dashboard`, `config` (GET/PUT), `rules` (POST/PUT/DELETE), `preview`, `skip`, `play-next`, `history` · `GET /admin/tracks` (search + filters incl. `channel`) · `GET /admin/tracks/:id` · `PATCH /admin/tracks/:id/enabled` · `POST /admin/tracks/:id/{process-lyrics,refresh-metadata}` · `GET /admin/hashtags`, `/stats` · **settings**: `GET /admin/settings`, `PUT /admin/settings/{telegram,whisper,llm}` · **language**: `GET /admin/language/{stats,lexicon,export}`, `PATCH|DELETE /admin/language/lexicon`, `POST /admin/language/{review,retrain}` · `POST /admin/sync` · `GET /admin/audit` · `GET /admin/telegram/status` · `POST /admin/telegram/login/{start,code,password,cancel}` · `POST /admin/telegram/logout`
 
 ## How it works (short)
 
 * **Selection** — `RadioRuleEngine` is a pure function `(config, rules, candidates, history, rng) → track`. Eligibility (which tracks may play) is separate from probability (weights, no duplicated tracks). Modes: `GLOBAL_RANDOM`, `HASHTAG_RANDOM` (ANY/ALL + weights), `HASHTAG_ROTATION`, `CUSTOM_RULE` (priority tiers, include/exclude). The same engine serves the live radio, `/admin/radio/preview` (deterministic per `seed`) and tests. The UI contains no selection logic.
-* **Concurrency** — config writes lock the singleton row, bump `configurationVersion`, support `expectedVersion` (409 on conflict) and are audited; skip/play-next are commands executed by the single playback engine (idempotent, `transition_seq` guard); the engine runs only on the instance holding a Postgres advisory lock (leader election).
+* **Concurrency** — config writes lock the channel's config row, bump `configurationVersion`, support `expectedVersion` (409 on conflict) and are audited; skip/play-next are commands executed by the single playback engine (idempotent, `transition_seq` guard); the leader (Postgres advisory lock) runs one player per started channel; admin commands (skip, play-next, config-changed, stations-changed) travel over Redis pub/sub.
 * **Streaming / latency** — Telegram chunks (128 KiB) → optional ffmpeg (non-MP3) → pacer (real-time, `RADIO_PREBUFFER_SECONDS` burst on a *continuous timeline* so latency does not grow at track changes) → broadcaster (short ring buffer for instant join, bounded per-listener backlog, slow listeners dropped). The next track is selected ~20 s before the end and its first 256 KiB prefetched → gapless transitions. Broken downloads resume from the last byte.
 * **Lyrics** — Telegraph (JSON API, HTML fallback, no CSS-selector coupling) → ffmpeg 16 kHz mono → Whisper (word timestamps when available) → **monotonic word-level DP alignment** (Levenshtein similarity; handles repeated choruses, missing lines, ASR errors, multiple lines per segment) → versioned `synced_lyrics`. Jobs: `telegram-sync`, `lyrics-fetch`, `audio-transcription`, `lyrics-alignment` (BullMQ, retries + backoff, idempotent, cached). Lyrics failures never affect playback.
 * **Resilience** — Telegram down / not logged in ⇒ radio state `ERROR` with backoff, tracks are *not* penalised; download failure ⇒ track skipped (`FAILED` after 3 consecutive failures, restored by the next sync); empty channel ⇒ `IDLE` (no busy loop).
@@ -76,7 +89,7 @@ The app **refuses to start** with an invalid/missing required configuration and 
 
 ```bash
 scripts/dev-services.sh                  # start local postgres/redis without docker (sandboxes)
-pnpm --filter @radio_rainy/api test      # 150+ tests (real Postgres + Redis; Telegram/Whisper/Telegraph are faked)
+pnpm --filter @radio_rainy/api test      # ~200 tests (real Postgres + Redis; Telegram/Whisper/Telegraph are faked)
 pnpm --filter @radio_rainy/admin test
 pnpm typecheck && pnpm lint
 pnpm --filter @radio_rainy/admin dev     # panel on :5173, proxying /admin and /radio to :3000
@@ -84,8 +97,8 @@ pnpm --filter @radio_rainy/admin dev     # panel on :5173, proxying /admin and /
 
 ## Known limitations / operational notes
 
-* **Not verified against the real Telegram / Whisper / ffmpeg** in CI (no credentials there): the MTProto gateway, live ffmpeg transcoder and Whisper HTTP provider are covered by unit tests and fakes; do a smoke run with your own credentials first.
-* Streaming runs on the leader instance; other instances answer `503` on `/radio/stream`. Put one instance behind your CDN/reverse proxy (disable proxy buffering — `X-Accel-Buffering: no` is already set), or add a relay for large audiences.
+* **Not verified against the real Telegram / Whisper / ffmpeg** in CI (no credentials there): the MTProto gateway, the Telegram live-stream (RTMP) call, the live ffmpeg transcoder and the Whisper HTTP provider are covered by unit tests and fakes; do a smoke run with your own credentials first.
+* Streaming runs on the leader instance; other instances answer `503` on `/radio/:slug/stream`. Put one instance behind your CDN/reverse proxy (disable proxy buffering — `X-Accel-Buffering: no` is already set), or add a relay for large audiences.
 * `position` is wall-clock based and may lead what listeners hear by up to `RADIO_PREBUFFER_SECONDS`.
 * Whisper is much less accurate on *sung* audio than on speech. Alignment tolerates a lot of noise and reports `LOW_COVERAGE` instead of producing garbage; a vocal-separation preprocessing step (e.g. demucs) would be the next quality improvement.
 * Using a personal Telegram account (MTProto user session) is subject to Telegram's ToS/rate limits; the client paces requests and handles FLOOD_WAIT.

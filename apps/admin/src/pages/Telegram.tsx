@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { TelegramStatus, api } from '../api';
 import { errorMessage, useAsync } from '../hooks';
+import { Link } from 'react-router-dom';
 import { ActionButton, Badge, Card, ErrorBox } from '../ui';
 
 const tone = (s: TelegramStatus['state']) => (s === 'READY' ? 'good' : s === 'ERROR' || s === 'DISCONNECTED' ? 'bad' : 'warn');
@@ -37,8 +38,11 @@ export function Telegram() {
         <ErrorBox error={status.error} />
         {s?.accountLabel && <p>Logged in as <b>{s.accountLabel}</b></p>}
         {s?.error && <p className="alert alert-warn">{s.error}</p>}
-        <p className="muted">The session is stored <b>encrypted</b> in the database. Your phone number, code and 2FA password are sent straight to Telegram and never stored or logged.</p>
+        <p className="muted">The session is stored <b>encrypted</b> in the database. Your phone number, code and 2FA password are sent straight to Telegram and never stored or logged. After logging in, add channels on the <Link to="/panel/channels">Channels</Link> page.</p>
 
+        {s?.state === 'NOT_CONFIGURED' && (
+          <div className="alert alert-warn">Telegram API ID / hash are not set yet. Enter them on the <Link to="/panel/settings">Settings</Link> page first.</div>
+        )}
         {(s?.state === 'NOT_LOGGED_IN' || s?.state === 'DISCONNECTED' || s?.state === 'ERROR') && (
           <form className="row wrap" onSubmit={submit(() => api('/admin/telegram/login/start', { method: 'POST', body: { phone } }))}>
             <label>Phone (international format) <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+989123456789" inputMode="tel" required /></label>
@@ -61,8 +65,8 @@ export function Telegram() {
         <ErrorBox error={error} />
         {s?.state === 'READY' && (
           <div className="row">
-            <ActionButton onAction={async () => { await api('/admin/sync', { method: 'POST', body: { full: false } }); }}>Sync new posts</ActionButton>
-            <ActionButton onAction={async () => { await api('/admin/sync', { method: 'POST', body: { full: true } }); }}>Full re-sync</ActionButton>
+            <ActionButton onAction={async () => { await api('/admin/sync', { method: 'POST', body: { full: false } }); }}>Sync all channels</ActionButton>
+            <ActionButton onAction={async () => { await api('/admin/sync', { method: 'POST', body: { full: true } }); }}>Full re-sync (all)</ActionButton>
             <ActionButton className="btn-danger" confirm="Log out of Telegram and delete the stored session?" onAction={async () => { await api('/admin/telegram/logout', { method: 'POST' }); status.reload(); }}>Log out</ActionButton>
           </div>
         )}

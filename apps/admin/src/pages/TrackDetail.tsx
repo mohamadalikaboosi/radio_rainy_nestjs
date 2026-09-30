@@ -48,7 +48,7 @@ export function TrackDetail() {
         </div>
         <div className="row wrap">
           <ActionButton onAction={act(`/admin/tracks/${t.id}/enabled`, { enabled: !t.enabled }, 'PATCH')}>{t.enabled ? 'Disable in radio' : 'Enable in radio'}</ActionButton>
-          <ActionButton onAction={act(`/admin/radio/play-next`, { trackId: t.id })} disabled={!t.enabled || t.status !== 'READY'}>▶ Play next</ActionButton>
+          <ActionButton onAction={act(`/admin/channels/${t.telegramChannelId}/radio/play-next`, { trackId: t.id })} disabled={!t.enabled || t.status !== 'READY'}>▶ Play next</ActionButton>
           {t.lyricsUrl && <ActionButton onAction={act(`/admin/tracks/${t.id}/process-lyrics`, { force: false })}>Process lyrics</ActionButton>}
           {t.lyricsUrl && <ActionButton onAction={act(`/admin/tracks/${t.id}/process-lyrics`, { force: true })} confirm="Re-fetch the Telegraph page and re-run transcription?">Reprocess (force)</ActionButton>}
           <ActionButton onAction={act(`/admin/tracks/${t.id}/refresh-metadata`)}>Refresh Telegram metadata</ActionButton>

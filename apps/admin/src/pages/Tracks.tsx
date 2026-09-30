@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { HashtagStat, LyricsStatus, Paged, TrackItem, api } from '../api';
+import { useChannels } from '../channel-context';
 import { LYRICS_LABEL, mmss, timeAgo } from '../format';
 import { useAsync } from '../hooks';
 import { ActionButton, Badge, Card, ErrorBox, Pager } from '../ui';
@@ -14,7 +15,12 @@ const lyricsTone = (s: LyricsStatus) => (s === 'LYRICS_READY' ? 'good' : s === '
 
 export function Tracks({ preset }: { preset: TracksPreset }) {
   const [sp, setSp] = useSearchParams();
+  const { channels, selected } = useChannels();
+  const channelParam = sp.get('channel');
+  // default: the channel picked in the top bar; ?channel=all shows every channel
+  const channel = channelParam === 'all' ? '' : (channelParam ?? selected?.id ?? '');
   const f = {
+    channel,
     q: sp.get('q') ?? '',
     artist: sp.get('artist') ?? '',
     album: sp.get('album') ?? '',
@@ -35,13 +41,17 @@ export function Tracks({ preset }: { preset: TracksPreset }) {
 
   const list = useAsync(
     () => api<Paged<TrackItem>>('/admin/tracks', { query: { ...f, enabled: preset.enabled, pageSize: 25 } }),
-    [sp.toString(), preset.enabled, preset.lyricsStatus],
+    [sp.toString(), preset.enabled, preset.lyricsStatus, selected?.id],
   );
   const tags = useAsync(() => api<{ items: HashtagStat[] }>('/admin/hashtags'), []);
 
   return (
     <Card title={preset.title}>
       <div className="filters row wrap">
+        <select value={channel || 'all'} onChange={(e) => setFilter('channel', e.target.value)} aria-label="channel filter">
+          <option value="all">All channels</option>
+          {channels.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
         <input placeholder="Search title / artist / album…" value={f.q} onChange={(e) => setFilter('q', e.target.value)} aria-label="search" />
         <input placeholder="Artist" value={f.artist} onChange={(e) => setFilter('artist', e.target.value)} aria-label="artist filter" />
         <input placeholder="Album" value={f.album} onChange={(e) => setFilter('album', e.target.value)} aria-label="album filter" />
@@ -89,7 +99,7 @@ export function Tracks({ preset }: { preset: TracksPreset }) {
                 <td>{timeAgo(t.lastPlayedAt)}</td>
                 <td className="row">
                   {t.lyricsUrl && <ActionButton className="btn-small" onAction={async () => { await api(`/admin/tracks/${t.id}/process-lyrics`, { method: 'POST', body: {} }); list.reload(); }}>Lyrics</ActionButton>}
-                  <ActionButton className="btn-small" onAction={async () => { await api('/admin/radio/play-next', { method: 'POST', body: { trackId: t.id } }); }} disabled={!t.enabled || t.status !== 'READY'}>▶ Play</ActionButton>
+                  <ActionButton className="btn-small" onAction={async () => { await api(`/admin/channels/${t.channelId}/radio/play-next`, { method: 'POST', body: { trackId: t.id } }); }} disabled={!t.enabled || t.status !== 'READY'}>▶ Play</ActionButton>
                 </td>
               </tr>
             ))}
