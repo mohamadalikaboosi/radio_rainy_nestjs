@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { MIGRATIONS } from './migrations';
@@ -11,13 +11,18 @@ export interface Queryable {
 export const LOCKS = { MIGRATE: 7_100_001, PLAYBACK_LEADER: 7_100_002 } as const;
 
 @Injectable()
-export class DatabaseService implements Queryable, OnModuleDestroy {
+export class DatabaseService implements Queryable, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
   readonly pool: Pool;
 
   constructor(@Inject(APP_CONFIG) config: Pick<AppConfig, 'DATABASE_URL'>) {
     this.pool = new Pool({ connectionString: config.DATABASE_URL, max: 20 });
     this.pool.on('error', (err) => this.logger.error({ msg: 'idle pg client error', err: err.message }));
+  }
+
+  /** Schema is applied on boot (advisory-locked, so concurrent instances are safe). */
+  async onModuleInit(): Promise<void> {
+    await this.migrate();
   }
 
   query<T extends QueryResultRow = QueryResultRow>(text: string, params: readonly unknown[] = []): Promise<QueryResult<T>> {

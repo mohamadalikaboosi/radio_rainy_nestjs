@@ -17,6 +17,7 @@ export const envSchema = z.object({
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  QUEUE_PREFIX: z.string().default('radio_rainy'),
 
   RADIO_RECENT_TRACK_WINDOW: z.coerce.number().int().min(0).default(10),
   /** Seconds of audio sent in a burst to new listeners; lower = lower latency. */
