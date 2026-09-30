@@ -28,7 +28,7 @@ export interface RtmpPublisher {
 export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128): string[] {
   const base = target.url.endsWith('/') ? target.url : `${target.url}/`;
   return [
-    '-nostdin', '-loglevel', 'error',
+    '-nostdin', '-loglevel', 'warning',
     '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=640x360:r=10', // Telegram requires a video track: a static dark frame
     '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
@@ -135,12 +135,12 @@ export class TelegramLiveStreamer {
         this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
         const res = await this.publisher.publish(target, (sink) => this.attach(sink), signal);
         if (signal.aborted) return;
-        throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().slice(-300).split(target.key).join('<stream-key>')}`);
+        throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().split(target.key).join('<stream-key>')}`);
       } catch (err) {
         if (signal.aborted) return;
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn({ msg: 'telegram live stream failed; will retry', channelId: this.channelId, err: message, retryInMs: delay });
-        await this.channels.setLiveStatus(this.channelId, 'ERROR', message.slice(0, 300)).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
+        await this.channels.setLiveStatus(this.channelId, 'ERROR', message.slice(0, 1200)).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
         if (Date.now() - startedAt > this.opt.stableAfterMs) delay = this.opt.retryMinMs;
         await this.sleep(delay, signal);
         delay = Math.min(this.opt.retryMaxMs, delay * 2);
