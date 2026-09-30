@@ -38,7 +38,7 @@ describe('TelegramSessionStore', () => {
     await store.save('SUPER-SECRET-SESSION', maskPhone('+989123456789'), 'admin@x.co');
     const raw = await db.query<{ ciphertext: string; account_label: string }>('SELECT * FROM telegram_session');
     expect(raw.rows[0]?.ciphertext).not.toContain('SUPER-SECRET');
-    expect(raw.rows[0]?.account_label).toBe('+98*********89');
+    expect(raw.rows[0]?.account_label).toBe('+98********89');
     expect(await store.load()).toBe('SUPER-SECRET-SESSION');
     await store.save('SECOND', null, null);
     expect(await store.load()).toBe('SECOND');
