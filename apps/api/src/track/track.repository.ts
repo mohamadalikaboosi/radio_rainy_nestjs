@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DatabaseService, Queryable } from '../database/database.service';
 import { ParsedCaption } from '../telegram/caption-parser';
 import { TelegramAudioMessage } from '../telegram/telegram.types';
-import { mapTrack, Track, TRACK_COLUMNS, TrackRow } from './track.types';
+import { LyricsStatus, mapTrack, Track, TRACK_COLUMNS, TrackRow } from './track.types';
 
 export type UpsertOutcome = 'created' | 'updated' | 'unchanged' | 'restored';
 
@@ -182,5 +182,21 @@ export class TrackRepository {
     const r = await this.db.query<TrackRow>(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE id = $1`, [id]);
     const row = r.rows[0];
     return row ? mapTrack(row) : null;
+  }
+
+  /** Telegram identity needed to download audio and to key transcript caches. */
+  async getFileIdentity(trackId: string): Promise<{ messageId: number; channelId: string; fileReference: string; fileSize: number | null } | null> {
+    const r = await this.db.query<{ telegram_message_id: number; telegram_channel_id: string; telegram_file_reference: string; file_size: string | null }>(
+      'SELECT telegram_message_id, telegram_channel_id, telegram_file_reference, file_size FROM tracks WHERE id = $1',
+      [trackId],
+    );
+    const x = r.rows[0];
+    return x
+      ? { messageId: x.telegram_message_id, channelId: x.telegram_channel_id, fileReference: x.telegram_file_reference, fileSize: x.file_size === null ? null : Number(x.file_size) }
+      : null;
+  }
+
+  async setLyricsStatus(trackId: string, status: LyricsStatus, error: string | null = null): Promise<void> {
+    await this.db.query('UPDATE tracks SET lyrics_status = $2, lyrics_error = $3, updated_at = now() WHERE id = $1', [trackId, status, error]);
   }
 }
