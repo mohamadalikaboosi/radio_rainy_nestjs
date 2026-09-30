@@ -13,6 +13,20 @@ Telegram ─► TelegramClient ─► Track discovery ─► Postgres ◄── 
         Telegraph ─► Lyrics ───────────────────────────────┴► Alignment ─► SyncedLyrics ─► /radio/current/lyrics(/active)
 ```
 
+## Run everything with Docker
+
+One command starts Postgres, Redis, MinIO and the app (API + admin panel + radio stream + ffmpeg):
+
+```bash
+cp .env.example .env        # fill TELEGRAM_SESSION_ENCRYPTION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD_HASH, JWT_SECRET
+docker compose up -d --build
+```
+
+Panel + stream: http://localhost:3000 (`APP_PORT` in `.env` changes the host port). Inside compose `DATABASE_URL`/`REDIS_URL` point at the containers, so you don't set them.
+In the panel: Settings -> Telegram (API id/hash), log in, add a channel and start it. For MinIO use endpoint `minio`, port `9000`, key/secret `radiorainy` / `radiorainy-secret`.
+Logs: `docker compose logs -f app`. Update: `git pull && docker compose up -d --build`. Data lives in the `pg-data`, `redis-data` and `minio-data` volumes.
+The Telegram RTMPS live stream needs the container to reach `*.rtmp.t.me:443` (use a system-wide VPN if that host is filtered where you run it).
+
 ## Quick start
 
 Requirements: Node 22+, pnpm, PostgreSQL 16, Redis 7, **ffmpeg** (non-MP3 tracks, Whisper preprocessing, live stream in Telegram).

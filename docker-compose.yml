@@ -1,11 +1,32 @@
 services:
+  # The whole app: API + admin panel + radio stream (+ ffmpeg). Panel: http://localhost:3000
+  # Setup: copy .env.example to .env, fill TELEGRAM_SESSION_ENCRYPTION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD_HASH, JWT_SECRET, then: docker compose up -d --build
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/radio_rainy
+      REDIS_URL: redis://redis:6379
+      TELEGRAM_SESSION_ENCRYPTION_KEY: ${TELEGRAM_SESSION_ENCRYPTION_KEY:?set TELEGRAM_SESSION_ENCRYPTION_KEY in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    ports: ["${APP_PORT:-3000}:3000"]
   postgres:
     image: postgres:16
-    environment: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: radio_rainy }
+    environment: { POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}", POSTGRES_DB: radio_rainy }
     ports: ["5432:5432"]
+    volumes: ["pg-data:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres -d radio_rainy"], interval: 5s, timeout: 3s, retries: 20 }
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 20 }
   # Audio cache. In the panel: Settings -> Audio storage -> endpoint minio:9000 (or localhost:9000 when the API runs on the host),
   # access key/secret = MINIO_ROOT_USER/PASSWORD below. The bucket is created automatically.
   minio:
@@ -17,4 +38,6 @@ services:
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio-data:/data"]
 volumes:
+  pg-data:
+  redis-data:
   minio-data:
