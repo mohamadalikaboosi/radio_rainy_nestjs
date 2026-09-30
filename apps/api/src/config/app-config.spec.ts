@@ -48,4 +48,21 @@ describe('loadConfig', () => {
     expect(isWhisperEnabled(loadConfig({ ...valid, WHISPER_URL: '', WHISPER_API_KEY: '', WHISPER_MODEL: '' }))).toBe(false);
     expect(isWhisperEnabled(loadConfig(valid))).toBe(true);
   });
+
+  it('tolerates CRLF, spaces and quotes from Windows .env files', () => {
+    const c = loadConfig({ ...valid, TELEGRAM_CHANNEL: '"@chan"\r', ADMIN_EMAIL: ' a@b.co \r', ADMIN_PASSWORD_HASH: 'scrypt:aa:bb\r' });
+    expect(c.TELEGRAM_CHANNEL).toBe('@chan');
+    expect(c.ADMIN_EMAIL).toBe('a@b.co');
+    expect(c.ADMIN_PASSWORD_HASH).toBe('scrypt:aa:bb');
+  });
+  it('explains a malformed hash without leaking it', () => {
+    try {
+      loadConfig({ ...valid, ADMIN_PASSWORD_HASH: '> @radio_rainy/api@0.1.0 hash-password scrypt:aa:bb' });
+      throw new Error('should have failed');
+    } catch (e) {
+      expect(String(e)).toContain('ADMIN_PASSWORD_HASH');
+      expect(String(e)).toMatch(/starts with "> @radi/);
+      expect(String(e)).not.toContain('scrypt:aa:bb');
+    }
+  });
 });

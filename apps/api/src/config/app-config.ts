@@ -39,7 +39,7 @@ export const envSchema = z.object({
   TMP_DIR: z.string().default('/tmp/radio_rainy'),
 
   ADMIN_EMAIL: z.string().email(),
-  ADMIN_PASSWORD_HASH: z.string().regex(/^scrypt[:$][0-9a-f]+[:$][0-9a-f]+$/, 'expected scrypt:<saltHex>:<hashHex> (generate with: pnpm --filter @radio_rainy/api hash-password <password>)'),
+  ADMIN_PASSWORD_HASH: z.string().regex(/^scrypt[:$][0-9a-f]+[:$][0-9a-f]+$/, 'expected scrypt:<saltHex>:<hashHex> (generate with: pnpm --silent --filter @radio_rainy/api hash-password <password>)'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 });
 
@@ -51,11 +51,18 @@ export class ConfigError extends Error {}
 /** Validates the environment once at startup. Throws with every problem listed; never continues half-configured. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // An empty value (`WHISPER_URL=` in .env) means "not set", never an error.
+  // Windows .env files often carry a trailing \r (CRLF), stray spaces or quotes: normalize before validating.
   const cleaned: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(env)) if (v !== undefined && v.trim() !== '') cleaned[k] = v;
+  for (const [k, raw] of Object.entries(env)) {
+    if (raw === undefined) continue;
+    const v = raw.trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
+    if (v !== '') cleaned[k] = v;
+  }
   const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
-    const problems = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const problems = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}${hint(String(i.path[0] ?? ''), cleaned[String(i.path[0] ?? '')])}`)
+      .join('\n');
     throw new ConfigError(`Invalid configuration:\n${problems}`);
   }
   return parsed.data;
@@ -79,6 +86,16 @@ export function redactConfig(cfg: AppConfig): Record<string, unknown> {
   return out;
 }
 
+
+/** Non-secret diagnostics for the most common .env mistakes (never prints the value itself, only its shape). */
+function hint(key: string, value: string | undefined): string {
+  if (value === undefined) return ' [missing or empty]';
+  if (key === 'ADMIN_PASSWORD_HASH') {
+    const colons = (value.match(/:/g) ?? []).length;
+    return ` [got ${value.length} chars, starts with "${value.slice(0, 7)}", ${colons} ':' separators; expected ~168 hex chars after "scrypt:" salt:hash — copy ONLY the line printed by hash-password]`;
+  }
+  return ` [got ${value.length} chars]`;
+}
 
 export function isWhisperEnabled(cfg: Pick<AppConfig, 'WHISPER_URL'>): boolean {
   return cfg.WHISPER_URL !== undefined;

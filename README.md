@@ -21,7 +21,7 @@ Requirements: Node 22+, pnpm, PostgreSQL 16, Redis 7, **ffmpeg** (non-MP3 tracks
 pnpm install
 docker compose up -d                     # postgres + redis (or use your own)
 cp .env.example .env                     # then fill it in (see below)
-pnpm --filter @radio_rainy/api hash-password 'your-admin-password'   # -> ADMIN_PASSWORD_HASH
+pnpm --silent --filter @radio_rainy/api hash-password 'your-admin-password'   # -> ADMIN_PASSWORD_HASH
 openssl rand -hex 32                     # -> TELEGRAM_SESSION_ENCRYPTION_KEY
 openssl rand -hex 32                     # -> JWT_SECRET
 pnpm --filter @radio_rainy/admin build   # builds the panel + player (served by the API)
