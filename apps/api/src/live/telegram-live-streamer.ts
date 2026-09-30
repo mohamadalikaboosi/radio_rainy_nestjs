@@ -74,9 +74,11 @@ export interface LiveOptions {
   maxBacklogBytes: number;
   /** After this long without a crash the retry delay resets. */
   stableAfterMs: number;
+  /** LIVE is only reported once ffmpeg has stayed connected this long (it exits at once when the RTMP connection is refused). */
+  confirmAfterMs: number;
 }
 
-export const DEFAULT_LIVE_OPTIONS: LiveOptions = { retryMinMs: 3000, retryMaxMs: 60_000, maxBacklogBytes: 512 * 1024, stableAfterMs: 60_000 };
+export const DEFAULT_LIVE_OPTIONS: LiveOptions = { retryMinMs: 3000, retryMaxMs: 60_000, maxBacklogBytes: 512 * 1024, stableAfterMs: 60_000, confirmAfterMs: 6000 };
 
 /**
  * Mirrors a station's radio stream into the channel's Telegram live stream, so the music also plays inside Telegram.
@@ -131,9 +133,12 @@ export class TelegramLiveStreamer {
         await this.channels.setLiveStatus(this.channelId, 'STARTING', null);
         const target = await this.api.openLiveStream(this.channelId, this.title);
         if (signal.aborted) return;
-        await this.channels.setLiveStatus(this.channelId, 'LIVE', null);
-        this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
-        const res = await this.publisher.publish(target, (sink) => this.attach(sink), signal);
+        const confirm = setTimeout(() => {
+          if (signal.aborted) return;
+          this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
+          void this.channels.setLiveStatus(this.channelId, 'LIVE', null).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
+        }, this.opt.confirmAfterMs);
+        const res = await this.publisher.publish(target, (sink) => this.attach(sink), signal).finally(() => clearTimeout(confirm));
         if (signal.aborted) return;
         throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().split(target.key).join('<stream-key>')}`);
       } catch (err) {

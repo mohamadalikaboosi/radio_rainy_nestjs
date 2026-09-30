@@ -29,7 +29,7 @@ describe('TelegramLiveStreamer', () => {
     const streamer = new TelegramLiveStreamer(
       '1001', 'Radio', broadcaster, api, { publish },
       { setLiveStatus: async (_id, s, e = null) => void statuses.push([s, e]) },
-      { retryMinMs: 5, retryMaxMs: 20, maxBacklogBytes: 1024, stableAfterMs: 10_000 },
+      { retryMinMs: 5, retryMaxMs: 20, maxBacklogBytes: 1024, stableAfterMs: 10_000, confirmAfterMs: 1 },
       (ms, signal) => new Promise((r) => { const t = setTimeout(r, ms); signal.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); }),
     );
     return { streamer, statuses, api, broadcaster };
