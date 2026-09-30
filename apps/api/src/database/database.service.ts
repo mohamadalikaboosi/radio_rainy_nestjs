@@ -49,7 +49,7 @@ export class DatabaseService implements Queryable, OnModuleDestroy {
    * Returns a release function, or null when someone else holds it. The lock is released
    * automatically if the connection dies (leader failover).
    */
-  async tryAdvisoryLock(key: number): Promise<(() => Promise<void>) | null> {
+  async tryAdvisoryLock(key: number, onLost?: () => void): Promise<(() => Promise<void>) | null> {
     const client: PoolClient = await this.pool.connect();
     try {
       const res = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1) AS locked', [key]);
@@ -62,9 +62,17 @@ export class DatabaseService implements Queryable, OnModuleDestroy {
       throw err;
     }
     let released = false;
+    // If the connection dies the server drops the lock: tell the owner so it can stop acting as leader.
+    const lost = (): void => {
+      if (!released) onLost?.();
+    };
+    client.once('error', lost);
+    client.once('end', lost);
     return async () => {
       if (released) return;
       released = true;
+      client.removeListener('error', lost);
+      client.removeListener('end', lost);
       try {
         await client.query('SELECT pg_advisory_unlock($1)', [key]);
       } catch (err) {

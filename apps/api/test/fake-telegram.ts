@@ -17,6 +17,8 @@ export class FakeTelegramGateway implements TelegramGateway {
   files = new Map<number, Uint8Array[]>();
   failDownloadFor = new Set<number>();
   downloadCalls: number[] = [];
+  /** Fail once after N chunks on first download of this message (tests resume). */
+  flakyAfterChunks = new Map<number, number>();
   channel: TelegramChannelInfo = { id: '1001', title: 'Test channel', username: 'chan' };
 
   add(m: TelegramAudioMessage, chunks: Uint8Array[] = [new Uint8Array([1, 2, 3])]): void {
@@ -42,6 +44,9 @@ export class FakeTelegramGateway implements TelegramGateway {
   async *download(id: number, opts: { offset?: number; signal?: AbortSignal } = {}): AsyncIterable<Uint8Array> {
     this.downloadCalls.push(id);
     if (this.failDownloadFor.has(id)) throw new Error('download failed');
+    const flaky = this.flakyAfterChunks.get(id);
+    if (flaky !== undefined) this.flakyAfterChunks.delete(id);
+    let emitted = 0;
     let skipped = 0;
     for (const c of this.files.get(id) ?? []) {
       if (opts.signal?.aborted) return;
@@ -52,6 +57,8 @@ export class FakeTelegramGateway implements TelegramGateway {
       }
       const start = Math.max(0, offset - skipped);
       skipped += c.length;
+      if (flaky !== undefined && emitted >= flaky) throw new Error('connection reset');
+      emitted++;
       yield c.subarray(start);
     }
   }

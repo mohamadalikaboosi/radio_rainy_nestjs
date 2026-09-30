@@ -85,7 +85,8 @@ export class TrackRepository {
         `UPDATE tracks SET title=$2, artist=$3, album=$4, duration=$5, mime_type=$6, file_size=$7, telegram_file_reference=$8,
                 telegram_post_url=$9, lyrics_url=$10, caption_raw=$11,
                 lyrics_status = CASE WHEN $12::boolean THEN (CASE WHEN $10::text IS NULL THEN 'LYRICS_NONE' ELSE 'LYRICS_PENDING' END) ELSE lyrics_status END,
-                status = CASE WHEN status = 'UNAVAILABLE' THEN 'READY' ELSE status END,
+                status = CASE WHEN status IN ('UNAVAILABLE', 'FAILED') THEN 'READY' ELSE status END,
+                consecutive_failures = CASE WHEN status = 'FAILED' THEN 0 ELSE consecutive_failures END,
                 deleted_at = NULL,
                 updated_at = CASE WHEN $13::boolean THEN now() ELSE updated_at END
           WHERE id = $1`,
@@ -198,5 +199,19 @@ export class TrackRepository {
 
   async setLyricsStatus(trackId: string, status: LyricsStatus, error: string | null = null): Promise<void> {
     await this.db.query('UPDATE tracks SET lyrics_status = $2, lyrics_error = $3, updated_at = now() WHERE id = $1', [trackId, status, error]);
+  }
+
+  /** Playback bookkeeping: reset failures on success, mark FAILED after `maxFailures` consecutive errors. */
+  async recordPlaybackResult(trackId: string, ok: boolean, maxFailures = 3): Promise<void> {
+    if (ok) {
+      await this.db.query('UPDATE tracks SET consecutive_failures = 0 WHERE id = $1 AND consecutive_failures <> 0', [trackId]);
+      return;
+    }
+    await this.db.query(
+      `UPDATE tracks SET consecutive_failures = consecutive_failures + 1,
+              status = CASE WHEN consecutive_failures + 1 >= $2 AND status = 'READY' THEN 'FAILED' ELSE status END, updated_at = now()
+        WHERE id = $1`,
+      [trackId, maxFailures],
+    );
   }
 }
