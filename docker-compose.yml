@@ -1,6 +1,7 @@
 services:
   # The whole app: API + admin panel + radio stream (+ ffmpeg). Panel: http://localhost:3000
-  # Setup: copy .env.example to .env, fill TELEGRAM_SESSION_ENCRYPTION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD_HASH, JWT_SECRET, then: docker compose up -d --build
+  # Setup: copy .env.example to .env, fill TELEGRAM_SESSION_ENCRYPTION_KEY and JWT_SECRET, then: docker compose up -d --build
+  # First login: admin / admin (the panel forces you to change the password before anything else works).
   app:
     build: .
     restart: unless-stopped
@@ -12,8 +13,8 @@ services:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/radio_rainy
       REDIS_URL: redis://redis:6379
       TELEGRAM_SESSION_ENCRYPTION_KEY: ${TELEGRAM_SESSION_ENCRYPTION_KEY:?set TELEGRAM_SESSION_ENCRYPTION_KEY in .env}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       AUDIO_CACHE_DIR: /data/audio-cache
       AUDIO_CACHE_MAX_MB: ${AUDIO_CACHE_MAX_MB:-1024}

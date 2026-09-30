@@ -19,6 +19,8 @@ export interface ChannelRow {
   liveRtmpUrl: string | null;
   liveRtmpKeySet: boolean;
   liveTargetRev: number;
+  /** Customer account that owns this station (null = run by the operator). */
+  ownerAccountId: string | null;
   createdAt: Date;
 }
 
@@ -35,10 +37,11 @@ interface Row {
   live_rtmp_url: string | null;
   live_rtmp_key_set: boolean;
   live_target_rev: number;
+  owner_account_id: string | null;
   created_at: Date;
 }
 
-const COLS = 'telegram_channel_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, live_rtmp_url, (live_rtmp_key_enc IS NOT NULL) AS live_rtmp_key_set, live_target_rev, created_at';
+const COLS = 'telegram_channel_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, live_rtmp_url, (live_rtmp_key_enc IS NOT NULL) AS live_rtmp_key_set, live_target_rev, owner_account_id, created_at';
 const map = (r: Row): ChannelRow => ({
   id: r.telegram_channel_id,
   reference: r.reference,
@@ -52,6 +55,7 @@ const map = (r: Row): ChannelRow => ({
   liveRtmpUrl: r.live_rtmp_url,
   liveRtmpKeySet: r.live_rtmp_key_set,
   liveTargetRev: r.live_target_rev,
+  ownerAccountId: r.owner_account_id,
   createdAt: r.created_at,
 });
 
@@ -136,6 +140,14 @@ export class ChannelRepository implements ChannelDirectory {
     const r = await this.db.query<{ live_rtmp_url: string | null; live_rtmp_key_enc: string | null }>('SELECT live_rtmp_url, live_rtmp_key_enc FROM channels WHERE telegram_channel_id = $1', [id]);
     const row = r.rows[0];
     return row?.live_rtmp_url && row.live_rtmp_key_enc ? { url: row.live_rtmp_url, keyEnc: row.live_rtmp_key_enc } : null;
+  }
+
+  async setOwner(id: string, accountId: string | null): Promise<boolean> {
+    return ((await this.db.query('UPDATE channels SET owner_account_id = $2, updated_at = now() WHERE telegram_channel_id = $1', [id, accountId])).rowCount ?? 0) > 0;
+  }
+
+  async ownedBy(accountId: string): Promise<ChannelRow[]> {
+    return (await this.db.query<Row>(`SELECT ${COLS} FROM channels WHERE owner_account_id = $1 ORDER BY created_at`, [accountId])).rows.map(map);
   }
 
   async setLiveStatus(id: string, status: LiveStatus, error: string | null = null): Promise<void> {

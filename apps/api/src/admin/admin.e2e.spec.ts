@@ -83,7 +83,7 @@ describe('Super Admin API (e2e)', () => {
     });
 
     it('/admin/auth/me returns the identity', async () => {
-      expect((await http().get('/admin/auth/me').set(auth()).expect(200)).body).toEqual({ email: ADMIN.email, role: 'SUPER_ADMIN' });
+      expect((await http().get('/admin/auth/me').set(auth()).expect(200)).body).toEqual({ username: ADMIN.email, role: 'SUPER_ADMIN', mustChangePassword: false });
     });
   });
 

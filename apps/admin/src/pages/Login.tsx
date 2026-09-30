@@ -3,8 +3,8 @@ import { api, authStore } from '../api';
 import { errorMessage } from '../hooks';
 import { ErrorBox } from '../ui';
 
-export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
-  const [email, setEmail] = useState('');
+export function Login({ onLoggedIn }: { onLoggedIn: (mustChangePassword: boolean) => void }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -14,9 +14,9 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ token: string }>('/admin/auth/login', { method: 'POST', body: { email, password } });
+      const r = await api<{ token: string; mustChangePassword?: boolean }>('/admin/auth/login', { method: 'POST', body: { username, password } });
       authStore.set(r.token);
-      onLoggedIn();
+      onLoggedIn(r.mustChangePassword === true);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -30,8 +30,8 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
         <h1>🌧 radio_rainy</h1>
         <p className="muted">Super Admin</p>
         <label>
-          Email
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          Username
+          <input type="text" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
         </label>
         <label>
           Password

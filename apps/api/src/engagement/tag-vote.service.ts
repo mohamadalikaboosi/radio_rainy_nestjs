@@ -49,6 +49,8 @@ export class TagVoteService {
     private readonly bus: Pick<RadioBus, 'publish'>,
     private readonly rng: Rng = cryptoRng,
     private readonly now: () => number = () => Date.now(),
+    /** Tells the live sockets that the vote changed (optional). */
+    private readonly events?: { publish(e: { type: 'vote'; channelId: string }): Promise<void> },
   ) {}
 
   /** The tag that currently overrides the selection (winner still within its play window), or null. */
@@ -71,6 +73,7 @@ export class TagVoteService {
         await this.polls.finish(cur.id);
         await this.changed(channelId);
         this.logger.log({ msg: 'tag vote: winner finished', channelId, tag: cur.winner });
+        await this.voteChanged(channelId);
       }
       return;
     }
@@ -95,6 +98,7 @@ export class TagVoteService {
     const opensAt = new Date(this.now());
     const poll = await this.polls.open(channelId, options, opensAt, new Date(opensAt.getTime() + pollMinutes * 60_000));
     this.logger.log({ msg: 'tag vote opened', channelId, options });
+    await this.voteChanged(channelId);
     return poll;
   }
 
@@ -104,6 +108,11 @@ export class TagVoteService {
     await this.polls.close(poll.id, winner, winner ? new Date(this.now() + playMinutes * 60_000) : null);
     this.logger.log({ msg: 'tag vote closed', channelId: poll.channelId, winner, tally });
     if (winner) await this.changed(poll.channelId);
+    await this.voteChanged(poll.channelId);
+  }
+
+  private async voteChanged(channelId: string): Promise<void> {
+    await this.events?.publish({ type: 'vote', channelId }).catch((e: unknown) => this.logger.warn({ msg: 'vote event publish failed', err: String(e) }));
   }
 
   private async changed(channelId: string): Promise<void> {
@@ -139,6 +148,7 @@ export class TagVoteService {
     if (!p.options.includes(tag)) throw new Error('unknown option');
     const ipHash = createHash('sha256').update(`radio_rainy:${ip}`).digest('hex').slice(0, 16);
     await this.polls.vote(p.id, voterId, ipHash, tag, MAX_VOTERS_PER_IP);
+    await this.voteChanged(channelId);
     return this.view(channelId, voterId);
   }
 }

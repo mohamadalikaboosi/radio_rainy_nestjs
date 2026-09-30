@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ChannelRepository } from '../channels/channel.repository';
 import { ZodPipe } from '../common/zod.pipe';
 import { AdsRepository } from './ads.repository';
+import { PlatformSettingsRepository } from '../portal/platform-settings.repository';
 import { SponsorsRepository } from './sponsors.repository';
 import { TagVoteService, VoteView } from './tag-vote.service';
 import { VoteLimitError } from './tag-poll.repository';
@@ -18,6 +19,7 @@ export class EngagementPublicController {
     private readonly sponsors: SponsorsRepository,
     private readonly ads: AdsRepository,
     private readonly votes: TagVoteService,
+    private readonly platform: PlatformSettingsRepository,
   ) {}
 
   private async channelId(slug: string): Promise<string> {
@@ -64,7 +66,8 @@ export class EngagementPublicController {
 
   @Get('go/ad/:id')
   async goAd(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
-    this.redirect(res, await this.ads.click(id));
+    const p = await this.platform.get();
+    this.redirect(res, await this.ads.click(id, { enabled: p.billingEnabled, pricePerPlayCents: p.pricePerPlayCents, pricePerClickCents: p.pricePerClickCents }));
   }
 
   @Get('go/sponsor/:id')

@@ -1,7 +1,8 @@
-import { Controller, Get, Header, Inject, Logger, NotFoundException, Param, Req, Res, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Logger, NotFoundException, Optional, Param, Req, Res, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ChannelRepository, ChannelRow } from '../channels/channel.repository';
 import { StationManager } from '../playback/station-manager';
+import { EngagementSettingsRepository } from '../engagement/engagement-settings.repository';
 import { CurrentRadioService } from '../radio/current-radio.service';
 import { HttpListenerSink } from './http-listener-sink';
 
@@ -26,6 +27,7 @@ export class RadioController {
     private readonly channels: ChannelRepository,
     private readonly current: CurrentRadioService,
     @Inject(STREAM_OPTIONS) private readonly opts: StreamOptions,
+    @Optional() private readonly engagement?: EngagementSettingsRepository,
   ) {}
 
   private async resolve(slug?: string): Promise<ChannelRow | null> {
@@ -40,8 +42,9 @@ export class RadioController {
 
   @Get('stations')
   @Header('Cache-Control', 'no-store')
-  async list(): Promise<{ slug: string; title: string; live: boolean }[]> {
-    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined }));
+  async list(): Promise<{ slug: string; title: string; live: boolean; transport: 'HTTP' | 'WEBSOCKET' }[]> {
+    const transports = (await this.engagement?.transports()) ?? new Map<string, 'HTTP' | 'WEBSOCKET'>();
+    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined, transport: transports.get(c.id) ?? 'HTTP' }));
   }
 
   // ---- default station (backwards compatible URLs) ----

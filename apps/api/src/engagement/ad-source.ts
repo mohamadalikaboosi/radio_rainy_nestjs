@@ -1,4 +1,5 @@
-import { AdsRepository } from './ads.repository';
+import { AdsRepository, BillingRule } from './ads.repository';
+import type { PlatformSettings } from '../portal/platform-settings.repository';
 import { EngagementSettingsRepository } from './engagement-settings.repository';
 import { AdSource, PlayableAd } from '../playback/playback-engine';
 import { LiveTranscoder, OpenedAudio } from '../playback/audio-pipeline';
@@ -16,6 +17,7 @@ async function* chunks(data: Buffer, signal: AbortSignal): AsyncGenerator<Uint8A
 export class DbAdSource implements AdSource {
   constructor(
     private readonly ads: Pick<AdsRepository, 'playableIds' | 'audio' | 'recordPlay'>,
+    private readonly platform: { get(): Promise<PlatformSettings> },
     private readonly settings: Pick<EngagementSettingsRepository, 'get'>,
     private readonly transcoder: LiveTranscoder | null,
     private readonly bitrateKbps: number,
@@ -27,7 +29,7 @@ export class DbAdSource implements AdSource {
   }
 
   async pick(channelId: string): Promise<PlayableAd | null> {
-    const candidates = await this.ads.playableIds(channelId);
+    const candidates = await this.ads.playableIds(channelId, await this.billing());
     const total = candidates.reduce((a, c) => a + c.weight, 0);
     if (total === 0) return null;
     let r = this.rng() * total;
@@ -51,7 +53,12 @@ export class DbAdSource implements AdSource {
     };
   }
 
-  played(adId: string): Promise<void> {
-    return this.ads.recordPlay(adId);
+  async played(adId: string): Promise<void> {
+    await this.ads.recordPlay(adId, await this.billing());
+  }
+
+  private async billing(): Promise<BillingRule> {
+    const p = await this.platform.get();
+    return { enabled: p.billingEnabled, pricePerPlayCents: p.pricePerPlayCents, pricePerClickCents: p.pricePerClickCents };
   }
 }

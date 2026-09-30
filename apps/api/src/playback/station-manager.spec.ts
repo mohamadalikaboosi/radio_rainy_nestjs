@@ -3,7 +3,7 @@ import { Broadcaster } from '../streaming/broadcaster';
 import { Station, StationManager } from './station-manager';
 
 const row = (id: string, over: Partial<ChannelRow> = {}): ChannelRow => ({
-  id, reference: `@c${id}`, title: `C${id}`, username: null, slug: `c${id}`, started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, createdAt: new Date(), ...over,
+  id, reference: `@c${id}`, title: `C${id}`, username: null, slug: `c${id}`, started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null, createdAt: new Date(), ...over,
 });
 
 function fakeStation(channel: ChannelRow) {

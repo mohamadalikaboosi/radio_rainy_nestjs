@@ -52,7 +52,7 @@ describe('TagVoteService', () => {
     for (let i = 1; i <= 3; i++) await seedTrack(i, ['rock']);
     for (let i = 4; i <= 6; i++) await seedTrack(i, ['jazz']);
     await seedTrack(7, ['lonely']); // only one track: never offered
-    await settings.save(CH, { adsEveryNTracks: 0, tagVoteEnabled: true, tagVoteIntervalMinutes: 10, tagVotePollMinutes: 3, tagVotePlayMinutes: 5, tagVoteOptions: 3, tagVoteAllowlist: [] });
+    await settings.save(CH, { adsEveryNTracks: 0, tagVoteEnabled: true, tagVoteIntervalMinutes: 10, tagVotePollMinutes: 3, tagVotePlayMinutes: 5, tagVoteOptions: 3, tagVoteAllowlist: [], audioTransport: 'HTTP' as const });
   });
   afterEach(() => db.onModuleDestroy());
 

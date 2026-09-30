@@ -18,7 +18,7 @@ Telegram ─► TelegramClient ─► Track discovery ─► Postgres ◄── 
 One command starts Postgres, Redis, MinIO and the app (API + admin panel + radio stream + ffmpeg):
 
 ```bash
-cp .env.example .env        # fill TELEGRAM_SESSION_ENCRYPTION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD_HASH, JWT_SECRET
+cp .env.example .env        # fill TELEGRAM_SESSION_ENCRYPTION_KEY and JWT_SECRET (the admin login is created on first start)
 docker compose up -d --build
 ```
 
@@ -55,7 +55,9 @@ Everything else is configured **in the admin panel** (`http://localhost:3000/pan
 
 ### Configuration (environment)
 
-Only these are **required**: `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_SESSION_ENCRYPTION_KEY` (encrypts all stored secrets), `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET` (≥ 32 chars).
+Only these are **required**: `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_SESSION_ENCRYPTION_KEY` (encrypts all stored secrets), `JWT_SECRET` (≥ 32 chars).
+
+**Super Admin login.** The first start seeds the user **`admin` / `admin`** in the database (nothing is read from the env afterwards). The server refuses every request except *change password* until that default password is replaced, so the default is only ever valid for the first login. Change it later under *Account & password*. Forgot it? Reset from the server: `pnpm --filter @radio_rainy/api reset-admin-password admin [newPassword]` (Docker: `docker compose exec app node dist/scripts/reset-admin-password.js admin`); without a password a random one is printed and a change is forced at the next login. Optional: set `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH` (`hash-password`) to seed a different first admin instead (no forced change).
 Telegram API id/hash, Whisper and LLM settings are stored in the DB (panel); the matching `TELEGRAM_API_*` / `WHISPER_*` env vars are just an optional fallback. Tuning: `RADIO_PREBUFFER_SECONDS` (default **2**, lower = lower latency), `RADIO_STREAM_BITRATE_KBPS`, `RADIO_RECENT_TRACK_WINDOW` (default for *new* channels), `WHISPER_SAMPLE_RATE` (default **48000**), `LYRICS_CACHE_TTL`, `TELEGRAM_SYNC_INTERVAL_SECONDS`, `QUEUE_PREFIX`, `FFMPEG_PATH`, `TMP_DIR`, `ADMIN_UI_DIR`, `LOG_LEVEL`, `PORT` — see `.env.example`.
 
 The app **refuses to start** with an invalid/missing required configuration and lists every problem. Secrets are never logged (pino redaction + config redaction) and never returned by any API.

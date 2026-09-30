@@ -8,12 +8,18 @@ import { ActionButton, Badge, Card, ErrorBox } from '../ui';
 
 const num = (v: string, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(Number(v) || min)));
 
+/** The operator edits the selected station; a station owner edits their own (same form, other endpoints). */
 export function Engagement() {
   const t = useT();
   const { selected } = useChannels();
-  const id = selected?.id;
-  const settings = useAsync(() => (id ? api<EngagementSettings>(`/admin/channels/${id}/engagement`) : Promise.resolve(null)), [id]);
-  const votes = useAsync(() => (id ? api<{ current: VoteView; history: PollHistoryItem[] }>(`/admin/channels/${id}/tag-votes`) : Promise.resolve(null)), [id], 5000);
+  if (!selected) return <p className="muted">{t('common.pickChannel')}</p>;
+  return <EngagementEditor channelId={selected.id} title={selected.title} prefix="/admin/channels" auth="admin" />;
+}
+
+export function EngagementEditor({ channelId: id, title, prefix, auth }: { channelId: string; title: string; prefix: '/admin/channels' | '/portal/stations'; auth: 'admin' | 'portal' }) {
+  const t = useT();
+  const settings = useAsync(() => api<EngagementSettings>(`${prefix}/${id}/engagement`, { auth }), [id, prefix]);
+  const votes = useAsync(() => api<{ current: VoteView; history: PollHistoryItem[] }>(`${prefix}/${id}/tag-votes`, { auth }), [id, prefix], 5000);
   const [form, setForm] = useState<EngagementSettings | null>(null);
   const [allow, setAllow] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -26,15 +32,13 @@ export function Engagement() {
     }
   }, [settings.data]);
 
-  if (!selected) return <p className="muted">{t('common.pickChannel')}</p>;
-
   const save = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (!form) return;
     setError(null);
     setSaved(false);
     try {
-      await api(`/admin/channels/${selected.id}/engagement`, { method: 'PUT', body: { ...form, tagVoteAllowlist: allow.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean) } });
+      await api(`${prefix}/${id}/engagement`, { auth, method: 'PUT', body: { ...form, tagVoteAllowlist: allow.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean) } });
       setSaved(true);
       settings.reload();
     } catch (err) {
@@ -48,7 +52,7 @@ export function Engagement() {
     <div className="stack">
       <div className="page-head">
         <h1>{t('engagement.title')}</h1>
-        <span className="muted">{selected.title}</span>
+        <span className="muted">{title}</span>
       </div>
 
       {form && (
@@ -104,7 +108,7 @@ export function Engagement() {
       <Card
         title={t('engagement.liveVote')}
         actions={
-          <ActionButton className="btn-small" disabled={cur?.status !== 'NONE'} onAction={async () => { await api(`/admin/channels/${selected.id}/tag-votes/start`, { method: 'POST' }); votes.reload(); }}>
+          <ActionButton className="btn-small" disabled={cur?.status !== 'NONE'} onAction={async () => { await api(`${prefix}/${id}/tag-votes/start`, { auth, method: 'POST' }); votes.reload(); }}>
             {t('engagement.startNow')}
           </ActionButton>
         }

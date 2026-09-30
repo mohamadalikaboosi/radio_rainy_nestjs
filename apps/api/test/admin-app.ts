@@ -63,7 +63,7 @@ export function fakeManager(): FakeTelegramManager {
 }
 
 /** Boots the real AppModule (real Postgres + Redis), with Telegram login faked and job workers disabled. */
-export async function bootAdminApp(): Promise<{ app: INestApplication; manager: FakeTelegramManager; gateway: FakeTelegramGateway; restore: () => void }> {
+export async function bootAdminApp(opts: { defaultAdmin?: boolean } = {}): Promise<{ app: INestApplication; manager: FakeTelegramManager; gateway: FakeTelegramGateway; restore: () => void }> {
   const db = await freshDb();
   await db.query('UPDATE channels SET started = false');
   await db.onModuleDestroy();
@@ -81,6 +81,11 @@ export async function bootAdminApp(): Promise<{ app: INestApplication; manager: 
     ADMIN_PASSWORD_HASH: await hashPassword(ADMIN.password),
     JWT_SECRET: 'j'.repeat(40),
   });
+  if (opts.defaultAdmin) {
+    // no operator-provided credentials: the first start seeds admin / admin
+    delete process.env.ADMIN_EMAIL;
+    delete process.env.ADMIN_PASSWORD_HASH;
+  }
   delete process.env.WHISPER_URL;
   delete process.env.TELEGRAM_SESSION;
   const manager = fakeManager();

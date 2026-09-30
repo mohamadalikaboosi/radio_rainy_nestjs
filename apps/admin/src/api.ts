@@ -28,6 +28,36 @@ export const authStore = {
   },
 };
 
+/** Customer (advertiser / station owner) token: separate from the Super Admin token so the two sessions never mix. */
+const PORTAL_KEY = 'rr_portal_token';
+let memoryPortalToken: string | null = null;
+export const portalStore = {
+  get(): string | null {
+    try {
+      return localStorage.getItem(PORTAL_KEY) ?? memoryPortalToken;
+    } catch {
+      return memoryPortalToken;
+    }
+  },
+  set(token: string): void {
+    memoryPortalToken = token;
+    try {
+      localStorage.setItem(PORTAL_KEY, token);
+    } catch {
+      /* memory fallback already set */
+    }
+  },
+  clear(): void {
+    memoryPortalToken = null;
+    try {
+      localStorage.removeItem(PORTAL_KEY);
+    } catch {
+      /* nothing to clear */
+    }
+  },
+};
+export const PORTAL_UNAUTHORIZED_EVENT = 'rr:portal-unauthorized';
+
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string, public readonly body: unknown) {
     super(message);
@@ -35,6 +65,8 @@ export class ApiError extends Error {
 }
 
 export const UNAUTHORIZED_EVENT = 'rr:unauthorized';
+/** The server refuses everything but the password change while the seeded default password is in place. */
+export const PASSWORD_CHANGE_EVENT = 'rr:password-change-required';
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -42,12 +74,15 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Query;
+  /** Which session's token to send. Default: the Super Admin. */
+  auth?: 'admin' | 'portal';
 }
 
 export async function api<T>(path: string, opt: RequestOptions = {}): Promise<T> {
   const url = new URL(path, window.location.origin);
   for (const [k, v] of Object.entries(opt.query ?? {})) if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
-  const token = authStore.get();
+  const portal = opt.auth === 'portal';
+  const token = portal ? portalStore.get() : authStore.get();
   const res = await fetch(url.pathname + url.search, {
     method: opt.method ?? 'GET',
     headers: { ...(opt.body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -61,10 +96,16 @@ export async function api<T>(path: string, opt: RequestOptions = {}): Promise<T>
     data = null;
   }
   if (!res.ok) {
-    if (res.status === 401 && path !== '/admin/auth/login') {
-      authStore.clear();
-      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    if (res.status === 401 && path !== '/admin/auth/login' && !path.startsWith('/portal/auth/')) {
+      if (portal) {
+        portalStore.clear();
+        window.dispatchEvent(new Event(PORTAL_UNAUTHORIZED_EVENT));
+      } else {
+        authStore.clear();
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
     }
+    if (res.status === 403 && typeof data === 'object' && data !== null && (data as { code?: unknown }).code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event(PASSWORD_CHANGE_EVENT));
     const msg = typeof data === 'object' && data !== null && 'message' in data ? String((data as { message: unknown }).message) : `HTTP ${res.status}`;
     throw new ApiError(res.status, msg, data);
   }
@@ -149,6 +190,7 @@ export interface ChannelItem {
   liveRtmpUrl: string | null;
   liveRtmpKeySet: boolean;
   liveTargetRev: number;
+  ownerAccountId: string | null;
 }
 export interface TelegramStatus {
   state: 'NOT_CONFIGURED' | 'NOT_LOGGED_IN' | 'CONNECTING' | 'AWAITING_CODE' | 'AWAITING_PASSWORD' | 'READY' | 'DISCONNECTED' | 'ERROR';
@@ -187,8 +229,8 @@ export interface LiveStation {
 }
 
 /** Uploads a file as the raw request body (Content-Type = the file's type), like `PUT /admin/ads/:id/audio`. */
-export async function uploadFile<T>(path: string, file: Blob & { name?: string }, contentType?: string): Promise<T> {
-  const token = authStore.get();
+export async function uploadFile<T>(path: string, file: Blob & { name?: string }, contentType?: string, auth: 'admin' | 'portal' = 'admin'): Promise<T> {
+  const token = auth === 'portal' ? portalStore.get() : authStore.get();
   const res = await fetch(path, { method: 'PUT', headers: { 'Content-Type': contentType ?? (file.type || 'application/octet-stream'), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: file });
   let data: unknown = null;
   try {
@@ -198,8 +240,13 @@ export async function uploadFile<T>(path: string, file: Blob & { name?: string }
   }
   if (!res.ok) {
     if (res.status === 401) {
-      authStore.clear();
-      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      if (auth === 'portal') {
+        portalStore.clear();
+        window.dispatchEvent(new Event(PORTAL_UNAUTHORIZED_EVENT));
+      } else {
+        authStore.clear();
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
     }
     const msg = typeof data === 'object' && data !== null && 'message' in data ? String((data as { message: unknown }).message) : `HTTP ${res.status}`;
     throw new ApiError(res.status, msg, data);
@@ -208,9 +255,16 @@ export async function uploadFile<T>(path: string, file: Blob & { name?: string }
 }
 
 // ---- ads, sponsors, engagement ----
+export type CampaignStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED';
 export interface AdItem {
   id: string;
   channelId: string | null;
+  accountId: string | null;
+  status: CampaignStatus;
+  reviewNote: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxPlays: number | null;
   name: string;
   weight: number;
   enabled: boolean;
@@ -267,4 +321,50 @@ export interface PollHistoryItem {
   winner: string | null;
   playUntil: string | null;
   tally: Record<string, number>;
+}
+
+// ---- accounts, portal, platform ----
+export interface PlatformSettings {
+  billingEnabled: boolean;
+  selfSignupEnabled: boolean;
+  campaignApprovalRequired: boolean;
+  pricePerPlayCents: number;
+  pricePerClickCents: number;
+  currency: string;
+  maxCampaignsPerAccount: number;
+}
+export type PublicPlatform = Omit<PlatformSettings, 'maxCampaignsPerAccount'>;
+export interface AccountSummary {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  creditCents: number;
+  createdAt: string;
+  email: string | null;
+  campaigns: number;
+  stations: number;
+}
+export interface LedgerEntry {
+  id: number;
+  amountCents: number;
+  balanceAfter: number;
+  kind: 'TOPUP' | 'PLAY' | 'CLICK' | 'ADJUST';
+  refId: string | null;
+  note: string | null;
+  createdAt: string;
+}
+export interface PortalMe {
+  account: { id: string; name: string; status: string; creditCents: number };
+  email: string;
+  platform: PublicPlatform;
+}
+export interface MyStation {
+  id: string;
+  slug: string;
+  title: string;
+  started: boolean;
+  listenersNow: number;
+  plays24h: number;
+  peakListeners24h: number;
+  avgListeners24h: number;
 }

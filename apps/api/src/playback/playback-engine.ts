@@ -321,9 +321,9 @@ export class PlaybackEngine {
       this.adAbort = null;
       await audio?.cancel().catch((e: unknown) => this.logger.warn({ msg: 'ad cancel failed', err: String(e) }));
       if (started) {
-        this.emit({ type: 'ad-ended', adId: ad.id });
         this.status = 'TRANSITIONING';
         await this.d.state.setAd(this.d.channelId, null, null).catch((e: unknown) => this.logger.warn({ msg: 'clear ad failed', err: String(e) }));
+        this.emit({ type: 'ad-ended', adId: ad.id }); // after the state row is cleared: subscribers read it
         await ads.played(ad.id).catch((e: unknown) => this.logger.warn({ msg: 'ad play count failed', err: String(e) }));
       }
     }

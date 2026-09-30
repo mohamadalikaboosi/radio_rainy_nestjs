@@ -57,8 +57,9 @@ export const envSchema = z.object({
   FFMPEG_PATH: z.string().default('ffmpeg'),
   TMP_DIR: z.string().default('/tmp/radio_rainy'),
 
-  ADMIN_EMAIL: z.string().email(),
-  ADMIN_PASSWORD_HASH: z.string().regex(/^scrypt[:$][0-9a-f]+[:$][0-9a-f]+$/, 'expected scrypt:<saltHex>:<hashHex> (generate with: pnpm --silent --filter @radio_rainy/api hash-password <password>)'),
+  /** Optional bootstrap of the first Super Admin (used only when the database has no admin yet). Without them the first start seeds admin / admin, which MUST be changed at the first login. */
+  ADMIN_EMAIL: z.string().trim().min(1).max(200).optional(),
+  ADMIN_PASSWORD_HASH: z.string().optional().refine((v) => v === undefined || /^scrypt[:$][0-9a-f]+[:$][0-9a-f]+$/.test(v), 'expected scrypt:<saltHex>:<hashHex> (generate with: pnpm --silent --filter @radio_rainy/api hash-password <password>)'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 });
 

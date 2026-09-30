@@ -11,6 +11,7 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest --runInBand",
     "hash-password": "ts-node src/scripts/hash-password.ts",
+    "reset-admin-password": "node -r ts-node/register -r ./src/scripts/dev-env.ts src/scripts/reset-admin-password.ts",
     "dev": "node -r ts-node/register -r ./src/scripts/dev-env.ts src/main.ts"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "telegram": "^2.26.22",
+    "ws": "^8.22.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -42,6 +44,7 @@
     "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
+    "@types/ws": "^8.18.2",
     "eslint": "^10.11.0",
     "jest": "^29.7.0",
     "s3rver": "^3.7.1",

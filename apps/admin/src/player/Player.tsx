@@ -187,6 +187,9 @@ export function Player() {
               ⬇ {t('player.install')}
             </button>
           )}
+          <a className="pl-chip" href="/portal">
+            {t('player.advertise')}
+          </a>
           <LanguageSwitcher className="pl-chip pl-select" />
           {r.stations && r.stations.length > 1 && (
             <select className="pl-chip pl-select" value={r.slug ?? ''} onChange={(e) => switchStation(e.target.value)} aria-label={t('player.station')}>

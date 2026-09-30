@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
-import { UNAUTHORIZED_EVENT, api, authStore } from './api';
+import { PASSWORD_CHANGE_EVENT, UNAUTHORIZED_EVENT, api, authStore } from './api';
 import { ChannelProvider, useChannels } from './channel-context';
 import { Icon } from './icons';
 import { LiveProvider, useLive } from './live-context';
 import { I18nProvider, LanguageSwitcher, useT } from './i18n';
+import { Account, ChangePasswordForm } from './pages/Account';
+import { Accounts } from './pages/Accounts';
 import { Ads } from './pages/Ads';
+import { CampaignReview } from './pages/CampaignReview';
+import { Platform } from './pages/Platform';
+import { PortalApp } from './portal/PortalApp';
 import { Audit } from './pages/Audit';
 import { Engagement } from './pages/Engagement';
 import { Sponsors } from './pages/Sponsors';
@@ -42,6 +47,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
     { to: '/panel/ads', label: 'nav.ads', icon: 'live' },
     { to: '/panel/sponsors', label: 'nav.sponsors', icon: 'channels' },
   ] },
+  { group: 'nav.business', items: [
+    { to: '/panel/review', label: 'nav.review', icon: 'audit' },
+    { to: '/panel/accounts', label: 'nav.accounts', icon: 'channels' },
+    { to: '/panel/platform', label: 'nav.platform', icon: 'settings' },
+  ] },
   { group: 'nav.library', items: [
     { to: '/panel/tracks', label: 'nav.tracks', icon: 'tracks', end: true },
     { to: '/panel/tracks-enabled', label: 'nav.enabled', icon: 'tracks', sub: true },
@@ -59,6 +69,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   { group: 'nav.system', items: [
     { to: '/panel/telegram', label: 'nav.telegram', icon: 'telegram' },
     { to: '/panel/settings', label: 'nav.settings', icon: 'settings' },
+    { to: '/panel/account', label: 'nav.account', icon: 'settings' },
     { to: '/panel/audit', label: 'nav.audit', icon: 'audit' },
   ] },
 ];
@@ -111,12 +122,29 @@ function Panel() {
     window.addEventListener(UNAUTHORIZED_EVENT, off);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, off);
   }, []);
-  // The token is only a convenience for the UI: the backend enforces SUPER_ADMIN on every request.
+  // The default admin / admin password must be replaced first: the server refuses everything else until then.
+  const [mustChange, setMustChange] = useState(false);
   useEffect(() => {
-    if (authed) void api('/admin/auth/me').catch(() => undefined);
+    const on = (): void => setMustChange(true);
+    window.addEventListener(PASSWORD_CHANGE_EVENT, on);
+    return () => window.removeEventListener(PASSWORD_CHANGE_EVENT, on);
+  }, []);
+  useEffect(() => {
+    if (authed) void api<{ mustChangePassword: boolean }>('/admin/auth/me').then((me) => setMustChange(me.mustChangePassword)).catch(() => undefined);
   }, [authed]);
 
-  if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
+  if (!authed) return <Login onLoggedIn={(must) => { setMustChange(must); setAuthed(true); }} />;
+  if (mustChange) {
+    return (
+      <main className="login">
+        <div className="card login-card">
+          <h1>🌧 radio_rainy</h1>
+          <h2>{t('account.changeTitle')}</h2>
+          <ChangePasswordForm forced onDone={() => setMustChange(false)} />
+        </div>
+      </main>
+    );
+  }
   const signOut = (): void => { authStore.clear(); setAuthed(false); };
   return (
     <ChannelProvider>
@@ -157,9 +185,13 @@ function Panel() {
                 <Route path="telegram" element={<Telegram />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="audit" element={<Audit />} />
+                <Route path="account" element={<Account />} />
                 <Route path="engagement" element={<Engagement />} />
                 <Route path="ads" element={<Ads />} />
                 <Route path="sponsors" element={<Sponsors />} />
+                <Route path="review" element={<CampaignReview />} />
+                <Route path="accounts" element={<Accounts />} />
+                <Route path="platform" element={<Platform />} />
                 <Route path="*" element={<Navigate to="/panel" replace />} />
               </Routes>
             </div>
@@ -177,6 +209,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Player />} />
         <Route path="/panel/*" element={<Panel />} />
+        <Route path="/portal/*" element={<PortalApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

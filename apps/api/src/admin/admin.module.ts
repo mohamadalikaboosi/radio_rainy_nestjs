@@ -18,7 +18,11 @@ import { TrackRepository } from '../track/track.repository';
 import { SessionCipher } from '../telegram/session-cipher';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminGuard } from './admin.guard';
+import { AdminUsersRepository } from './admin-users.repository';
+import { seedAdmin } from './admin-seeder';
 import { AdminAuthController, AdminChannelsController, AdminLiveController, AdminReportsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
+import { AdminMessagesController } from '../realtime/messages.controllers';
+import { AdminAccountsController, AdminCampaignsController, AdminPlatformController, AdminStationOwnerController } from '../portal/platform-admin.controllers';
 import { AdminAdsController, AdminEngagementController, AdminSponsorsController } from '../engagement/engagement-admin.controllers';
 import { AdminLanguageController, AdminSettingsController } from './settings-language.controllers';
 import { AuditService } from './audit.service';
@@ -35,6 +39,14 @@ import { StatsService } from './stats.service';
 import { TrackAdminService } from './track-admin.service';
 import { TrackQueryRepository } from './track-query.repository';
 
+/** Runs the admin seeder once the database is migrated (DatabaseService migrates on init). */
+class AdminSeederLifecycle implements OnApplicationBootstrap {
+  constructor(private readonly users: AdminUsersRepository, private readonly cfg: AppConfig) {}
+  async onApplicationBootstrap(): Promise<void> {
+    await seedAdmin(this.users, { username: this.cfg.ADMIN_EMAIL, passwordHash: this.cfg.ADMIN_PASSWORD_HASH });
+  }
+}
+
 class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(private readonly stats: StatsService) {}
   onApplicationBootstrap(): void {
@@ -46,9 +58,11 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
 }
 
 @Module({
-  controllers: [AdminAdsController, AdminSponsorsController, AdminEngagementController, AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
+  controllers: [AdminMessagesController, AdminPlatformController, AdminAccountsController, AdminCampaignsController, AdminStationOwnerController, AdminAdsController, AdminSponsorsController, AdminEngagementController, AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
-    { provide: AdminAuthService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new AdminAuthService({ adminEmail: c.ADMIN_EMAIL, passwordHash: c.ADMIN_PASSWORD_HASH, jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
+    { provide: AdminUsersRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AdminUsersRepository(db) },
+    { provide: AdminAuthService, inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminAuthService(u, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
+    { provide: 'ADMIN_SEEDER', inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminSeederLifecycle(u, c) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
     { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AuditService(db) },
     { provide: TrackQueryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new TrackQueryRepository(db) },

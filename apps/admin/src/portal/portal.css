@@ -1,0 +1,3 @@
+/* The customer portal reuses the panel's styles; only small extras live here. */
+.thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); }
+.live-target { margin-top: .4rem; }

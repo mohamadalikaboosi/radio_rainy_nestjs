@@ -404,4 +404,94 @@ CREATE TABLE tag_votes (
 CREATE INDEX tag_votes_ip_idx ON tag_votes (poll_id, ip_hash);
 `,
   },
+  {
+    id: '006_accounts_campaigns_billing',
+    sql: `
+-- Customer accounts (advertisers and station owners). The platform operator stays the env-configured Super Admin.
+CREATE TABLE accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' ${enumCheck('status', ['ACTIVE', 'SUSPENDED'])},
+  credit_cents BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE account_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX account_users_email_idx ON account_users (lower(email));
+
+-- Platform switches: billing is OFF (everything free) until the operator turns it on.
+CREATE TABLE platform_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Money ledger (amounts in the smallest currency unit). Only written when billing is enabled or an admin adjusts credit.
+CREATE TABLE credit_ledger (
+  id BIGSERIAL PRIMARY KEY,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  amount_cents BIGINT NOT NULL,
+  balance_after BIGINT NOT NULL,
+  kind TEXT NOT NULL ${enumCheck('kind', ['TOPUP', 'PLAY', 'CLICK', 'ADJUST'])},
+  ref_id TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX credit_ledger_account_idx ON credit_ledger (account_id, id DESC);
+
+-- Stations owned by a customer; ads become campaigns (owner, review state, schedule, play cap).
+ALTER TABLE channels ADD COLUMN owner_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL;
+CREATE INDEX channels_owner_idx ON channels (owner_account_id);
+ALTER TABLE ads
+  ADD COLUMN account_id UUID REFERENCES accounts(id) ON DELETE CASCADE,
+  ADD COLUMN status TEXT NOT NULL DEFAULT 'APPROVED' ${enumCheck('status', ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'PAUSED'])},
+  ADD COLUMN review_note TEXT,
+  ADD COLUMN starts_at TIMESTAMPTZ,
+  ADD COLUMN ends_at TIMESTAMPTZ,
+  ADD COLUMN max_plays INTEGER CHECK (max_plays IS NULL OR max_plays > 0),
+  ADD COLUMN submitted_at TIMESTAMPTZ;
+CREATE INDEX ads_account_idx ON ads (account_id);
+CREATE INDEX ads_status_idx ON ads (status);
+`,
+  },
+  {
+    id: '007_live_messages',
+    sql: `
+-- Announcements pushed to the listeners of a station (WebSocket) while they are active.
+CREATE TABLE live_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id BIGINT NOT NULL REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 500),
+  level TEXT NOT NULL DEFAULT 'INFO' ${enumCheck('level', ['INFO', 'WARN'])},
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX live_messages_active_idx ON live_messages (channel_id, expires_at);
+
+-- How the public player receives the audio of a station: plain HTTP MP3 (default) or binary WebSocket frames (MSE).
+ALTER TABLE channel_engagement ADD COLUMN audio_transport TEXT NOT NULL DEFAULT 'HTTP' ${enumCheck('audio_transport', ['HTTP', 'WEBSOCKET'])};
+`,
+  },
+  {
+    id: '008_admin_users',
+    sql: `
+-- Super admin accounts live in the database (seeded on first start); the env credentials are only an optional bootstrap.
+CREATE TABLE admin_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  password_changed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX admin_users_username_idx ON admin_users (lower(username));
+`,
+  },
 ];

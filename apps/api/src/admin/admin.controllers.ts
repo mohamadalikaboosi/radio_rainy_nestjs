@@ -23,20 +23,34 @@ import { TrackQuery, TrackQueryRepository, trackQuerySchema } from './track-quer
 
 const ctxOf = (req: AdminRequest): ActorContext => ({ actor: req.admin.email, requestId: req.id === undefined ? null : String(req.id) });
 
+const loginSchema = z
+  .object({ username: z.string().trim().min(1).max(200).optional(), email: z.string().trim().min(1).max(200).optional(), password: z.string().min(1).max(200) })
+  .refine((b) => b.username !== undefined || b.email !== undefined, { message: 'username is required' });
+const changePasswordSchema = z.object({ currentPassword: z.string().min(1).max(200), newPassword: z.string().min(1).max(200) });
+
 @Controller('admin/auth')
 export class AdminAuthController {
   constructor(private readonly auth: AdminAuthService) {}
 
+  /** `email` is accepted as an alias of `username` (older clients). */
   @Post('login')
   @HttpCode(200)
-  login(@Body(new ZodPipe(z.object({ email: z.string().email(), password: z.string().min(1).max(200) }))) body: { email: string; password: string }, @Req() req: AdminRequest) {
-    return this.auth.login(body.email, body.password, req.ip ?? 'unknown');
+  login(@Body(new ZodPipe(loginSchema)) body: z.infer<typeof loginSchema>, @Req() req: AdminRequest) {
+    return this.auth.login(body.username ?? body.email ?? '', body.password, req.ip ?? 'unknown');
   }
 
   @Get('me')
   @UseGuards(AdminGuard)
   me(@Req() req: AdminRequest) {
-    return req.admin;
+    return { username: req.admin.email, role: req.admin.role, mustChangePassword: req.admin.mustChangePassword === true };
+  }
+
+  /** Works even while the default password is still in place (that is its purpose). Returns a fresh token; older ones stop working. */
+  @Post('change-password')
+  @HttpCode(200)
+  @UseGuards(AdminGuard)
+  changePassword(@Body(new ZodPipe(changePasswordSchema)) body: z.infer<typeof changePasswordSchema>, @Req() req: AdminRequest) {
+    return this.auth.changePassword(req.admin, body.currentPassword, body.newPassword, req.ip ?? 'unknown');
   }
 }
 
