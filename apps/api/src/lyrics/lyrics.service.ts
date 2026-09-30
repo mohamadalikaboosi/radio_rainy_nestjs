@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LyricsError } from './lyrics.errors';
 import { LyricsRepository } from './lyrics.repository';
 import { LyricsSource } from './lyrics-source';
+import { detectLanguage } from '../language/language-detect';
 import { TrackRepository } from '../track/track.repository';
 
 export type FetchOutcome =
@@ -30,12 +31,14 @@ export class LyricsService {
       const own = await this.lyrics.getLyrics(trackId);
       if (own && own.status === 'FETCHED' && own.sourceUrl === url && own.rawText && own.expiresAt && own.expiresAt > new Date()) {
         this.logger.log({ msg: 'lyrics cache hit', trackId, scope: 'track' });
+        await this.tracks.setLyricsLanguage(trackId, detectLanguage(own.rawText));
         return { kind: 'FETCHED', rawText: own.rawText, cached: true };
       }
       const shared = await this.lyrics.findFreshRawByUrl(url);
       if (shared) {
         await this.lyrics.saveFetched(trackId, url, shared, this.cacheTtlSeconds);
         this.logger.log({ msg: 'lyrics cache hit', trackId, scope: 'url' });
+        await this.tracks.setLyricsLanguage(trackId, detectLanguage(shared));
         return { kind: 'FETCHED', rawText: shared, cached: true };
       }
     }
@@ -44,6 +47,7 @@ export class LyricsService {
       const started = Date.now();
       const text = await this.source.fetch(url);
       await this.lyrics.saveFetched(trackId, url, text, this.cacheTtlSeconds);
+      await this.tracks.setLyricsLanguage(trackId, detectLanguage(text));
       this.logger.log({ msg: 'telegraph fetched', trackId, chars: text.length, ms: Date.now() - started });
       return { kind: 'FETCHED', rawText: text, cached: false };
     } catch (err) {

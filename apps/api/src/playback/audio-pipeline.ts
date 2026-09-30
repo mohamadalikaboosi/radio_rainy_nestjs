@@ -22,6 +22,7 @@ const MAX_BPS = 40_000; // 320 kbps
 /** Download with resume: a mid-file network hiccup continues from the last received byte instead of skipping the track. */
 export async function* resilientDownload(
   gateway: TelegramGateway,
+  channelId: string,
   messageId: number,
   signal: AbortSignal | undefined,
   maxResumes = 2,
@@ -30,7 +31,7 @@ export async function* resilientDownload(
   let received = 0;
   for (let attempt = 0; ; attempt++) {
     try {
-      for await (const chunk of gateway.download(messageId, { offset: received, signal })) {
+      for await (const chunk of gateway.download(channelId, messageId, { offset: received, signal })) {
         received += chunk.length;
         yield chunk;
       }
@@ -125,7 +126,7 @@ export class TrackAudioPipeline {
   ) {}
 
   open(track: Track, signal: AbortSignal): OpenedAudio {
-    const raw = resilientDownload(this.gateway, track.telegramMessageId, signal, 2, this.logger);
+    const raw = resilientDownload(this.gateway, track.telegramChannelId, track.telegramMessageId, signal, 2, this.logger);
     const isMp3 = track.mimeType !== null && MP3_MIME.has(track.mimeType.toLowerCase());
     const cancel = async (): Promise<void> => {
       await raw.return(undefined);

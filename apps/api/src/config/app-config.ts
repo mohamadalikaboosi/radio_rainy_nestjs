@@ -6,13 +6,14 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
-  TELEGRAM_API_ID: z.coerce.number().int().positive(),
-  TELEGRAM_API_HASH: z.string().min(1),
+  /** Telegram API credentials are normally set from the admin panel (stored encrypted in the DB); env is an optional fallback. */
+  TELEGRAM_API_ID: z.coerce.number().int().positive().optional(),
+  TELEGRAM_API_HASH: z.string().min(1).optional(),
   /** Optional bootstrap only: normally the session is created via the Super Admin login flow and stored encrypted in the DB. */
   TELEGRAM_SESSION: z.string().optional(),
-  /** 32-byte key (64 hex chars) used to encrypt the Telegram session at rest (AES-256-GCM). */
+  /** 32-byte key (64 hex chars) that encrypts ALL secrets stored in the DB (Telegram session/API hash, Whisper and LLM keys) with AES-256-GCM. */
   TELEGRAM_SESSION_ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'expected 64 hex characters (32 bytes)'),
-  TELEGRAM_CHANNEL: z.string().min(1),
+
   TELEGRAM_SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(300),
 
   DATABASE_URL: z.string().url(),
@@ -30,6 +31,7 @@ export const envSchema = z.object({
   WHISPER_URL: z.string().url().optional(),
   WHISPER_API_KEY: z.string().optional(),
   WHISPER_LANGUAGE: z.string().optional(),
+  WHISPER_SAMPLE_RATE: z.coerce.number().int().min(8000).max(96000).default(48000),
   WHISPER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
 
   LYRICS_CACHE_TTL: z.coerce.number().int().positive().default(86_400),

@@ -5,6 +5,7 @@ import { audioMsg, FakeTelegramGateway } from '../../test/fake-telegram';
 import { InlineQueue } from '../../test/inline-queue';
 import { freshDb } from '../../test/test-db';
 import { LyricsAlignmentService } from '../alignment/lyrics-alignment.service';
+import { LexiconRepository } from '../language/lexicon';
 import { DatabaseService } from '../database/database.service';
 import { LyricsError } from '../lyrics/lyrics.errors';
 import { LyricsRepository } from '../lyrics/lyrics.repository';
@@ -81,15 +82,14 @@ describe('lyrics pipeline', () => {
     whisper = new FakeWhisper();
     queue = new InlineQueue(3);
     const transcription = new TrackTranscriptionService(
-      withWhisper ? whisper : null,
-      { provider: 'fake', model: 'fake-1' },
+      { current: async () => (withWhisper ? { provider: whisper, identity: { provider: 'fake', model: 'fake-1' }, language: undefined, sampleRate: 48000 } : null) },
       gw,
       copyPre,
       tracks,
       lyricsRepo,
       mkdtempSync(join(tmpdir(), 'rr-')),
     );
-    pipeline = new LyricsPipeline(queue, new LyricsService(src, lyricsRepo, tracks, 3600), transcription, new LyricsAlignmentService(lyricsRepo), tracks);
+    pipeline = new LyricsPipeline(queue, new LyricsService(src, lyricsRepo, tracks, 3600), transcription, new LyricsAlignmentService(lyricsRepo, new LexiconRepository(db), tracks), tracks);
     queue.pipeline = pipeline;
     discovery = new TelegramTrackDiscovery(gw, tracks, { onLyricsNeedFetch: (id) => pipeline.start(id) });
     gw.add(audioMsg(1, 'Artist - Song\nLyrics: https://telegra.ph/song-1\n#rain'), [Buffer.from('AUDIO-1')]);
@@ -102,7 +102,7 @@ describe('lyrics pipeline', () => {
   it('happy path: discover -> fetch -> transcribe -> align -> LYRICS_READY, audio streamed to Whisper', async () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
-    await discovery.sync();
+    await discovery.sync('1001');
     expect((await status())?.lyrics_status).toBe('LYRICS_PENDING');
     await queue.drain();
     const t = await status();
@@ -116,7 +116,7 @@ describe('lyrics pipeline', () => {
 
   it('Telegraph 404 -> LYRICS_FAILED without retries; nothing else runs', async () => {
     await setup();
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(await status()).toMatchObject({ lyrics_status: 'LYRICS_FAILED', lyrics_error: 'NOT_FOUND' });
     expect(queue.history).toEqual(['fetch#1']);
@@ -130,7 +130,7 @@ describe('lyrics pipeline', () => {
       if (++n < 3) throw new LyricsError('NETWORK', 'down');
       return LYRICS;
     };
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(queue.history.filter((h) => h.startsWith('fetch'))).toEqual(['fetch#1', 'fetch#2', 'fetch#3']);
     expect((await status())?.lyrics_status).toBe('LYRICS_READY');
@@ -140,7 +140,7 @@ describe('lyrics pipeline', () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
     whisper.failures = [1, 2, 3].map(() => new TranscriptionError('503', true));
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect((await status())?.lyrics_status).toBe('LYRICS_FAILED');
     expect(whisper.calls).toBe(3);
@@ -151,7 +151,7 @@ describe('lyrics pipeline', () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
     whisper.failures = [new TranscriptionError('400 bad audio', false)];
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(whisper.calls).toBe(1);
     expect((await status())?.lyrics_status).toBe('LYRICS_FAILED');
@@ -160,7 +160,7 @@ describe('lyrics pipeline', () => {
   it('invalid lyrics (unrelated to audio) -> alignment LOW_COVERAGE -> LYRICS_FAILED', async () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', 'completely unrelated words here\nnothing matches at all');
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(await status()).toMatchObject({ lyrics_status: 'LYRICS_FAILED', lyrics_error: 'LOW_COVERAGE' });
   });
@@ -168,7 +168,7 @@ describe('lyrics pipeline', () => {
   it('Whisper not configured: raw lyrics fetched, no transcription, no error status', async () => {
     await setup(false);
     src.pages.set('https://telegra.ph/song-1', LYRICS);
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(await status()).toMatchObject({ lyrics_status: 'LYRICS_NONE', lyrics_error: 'SYNC_DISABLED' });
     expect((await lyricsRepo.getLyrics((await status())?.id ?? ''))?.rawText).toBe(LYRICS);
@@ -178,7 +178,7 @@ describe('lyrics pipeline', () => {
   it('reprocess is idempotent: cached Telegraph + transcript, no new synced version', async () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     const id = (await status())?.id ?? '';
     await pipeline.start(id);
@@ -192,7 +192,7 @@ describe('lyrics pipeline', () => {
   it('force reprocess refetches and re-transcribes; changed result creates version 2', async () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     const id = (await status())?.id ?? '';
     whisper.result = { ...GOOD, segments: GOOD.segments.map((s) => ({ ...s, start: s.start + 1, end: s.end + 1 })) };
@@ -207,7 +207,7 @@ describe('lyrics pipeline', () => {
     await setup();
     src.pages.set('https://telegra.ph/song-1', LYRICS);
     gw.add(audioMsg(2, 'Other - Song\nLyrics: https://telegra.ph/song-1'), [Buffer.from('AUDIO-2')]);
-    await discovery.sync();
+    await discovery.sync('1001');
     await queue.drain();
     expect(src.calls).toHaveLength(1);
     expect((await status(2))?.lyrics_status).toBe('LYRICS_READY');

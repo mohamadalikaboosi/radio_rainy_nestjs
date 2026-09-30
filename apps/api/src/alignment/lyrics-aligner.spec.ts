@@ -143,3 +143,44 @@ describe('alignLyrics', () => {
     }
   });
 });
+
+import { detectLanguage, whisperLanguage } from '../language/language-detect';
+import { lexiconFrom } from '../language/lexicon';
+
+describe('language detection', () => {
+  it('detects Persian, English, mixed and unknown', () => {
+    expect(detectLanguage('شب بارونی بود تو رفتی از پیشم')).toBe('fa');
+    expect(detectLanguage('Hello my friend welcome to the night')).toBe('en');
+    expect(detectLanguage('دوستت دارم my love forever و همیشه')).toBe('mixed');
+    expect(detectLanguage('la la')).toBe('unknown');
+    expect(whisperLanguage('fa')).toBe('fa');
+    expect(whisperLanguage('mixed')).toBeUndefined();
+  });
+});
+
+describe('trainable lexicon', () => {
+  const t = tr([seg(0, 3, 'stay with me cuz you are here'), seg(3, 6, 'hold me close tonight')]);
+  const lyricsText = 'stay with me because you are here\nhold me close tonight';
+
+  it('learns single-word substitutions between anchors (what it will use next time)', () => {
+    const r = alignLyrics(lyricsText, t);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.learned).toContainEqual({ asr: 'cuz', lyric: 'because' });
+    expect(r.quality).toBeLessThan(1);
+  });
+
+  it('a trusted lexicon entry makes the variant count as a match (higher quality, nothing left to learn)', () => {
+    const lex = lexiconFrom(new Map([['cuz', new Set(['because'])]]));
+    const r = alignLyrics(lyricsText, t, {}, lex);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.quality).toBe(1);
+    expect(r.lines[0]?.confidence).toBeGreaterThan(0.9);
+  });
+
+  it('does not learn from poor alignments (no garbage in the lexicon)', () => {
+    const r = alignLyrics('aaa bbb ccc ddd eee', tr([seg(0, 3, 'aaa xxx ccc zzz eee qqq www')]), { minCoverage: 0.1 });
+    if (r.ok) expect(r.quality < 0.6 ? r.learned : []).toEqual([]);
+  });
+});

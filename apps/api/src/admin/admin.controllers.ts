@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { TimeoutError } from '../common/timeout';
 import { ZodPipe } from '../common/zod.pipe';
 import { BullMqJobQueue } from '../jobs/bullmq-job-queue';
-import { PlaybackEngine } from '../playback/playback-engine';
+import { addChannelSchema, ChannelService } from '../channels/channel.service';
+import { StationManager } from '../playback/station-manager';
 import { ActorContext, ConfigUpdate, configUpdateSchema, PreviewRequest, previewSchema, RadioConfigurationService, RuleInput, ruleSchema } from '../radio/radio-configuration.service';
 import { TelegramClientManager } from '../telegram/telegram-client.manager';
 import { maskPhone } from '../telegram/telegram-session.store';
@@ -41,8 +42,8 @@ export class AdminDashboardController {
   constructor(private readonly dashboard: DashboardService, private readonly audit: AuditService) {}
 
   @Get('dashboard')
-  get() {
-    return this.dashboard.get();
+  overview() {
+    return this.dashboard.overview();
   }
 
   @Get('audit')
@@ -106,10 +107,10 @@ export class AdminTelegramController {
 
   @Post('sync')
   @HttpCode(202)
-  async sync(@Body(new ZodPipe(z.object({ full: z.boolean().default(false) }).default({ full: false }))) body: { full: boolean }, @Req() req: AdminRequest) {
-    await this.queue.enqueueTelegramSync({ full: body.full });
+  async sync(@Body(new ZodPipe(z.object({ full: z.boolean().default(false), channelId: z.string().regex(/^\d{1,20}$/).optional() }).default({ full: false }))) body: { full: boolean; channelId?: string }, @Req() req: AdminRequest) {
+    await this.queue.enqueueTelegramSync({ full: body.full, ...(body.channelId ? { channelId: body.channelId } : {}) });
     await this.audit.record({ actor: req.admin.email, action: 'telegram.sync', entityType: 'telegram', after: body, requestId: ctxOf(req).requestId });
-    return { queued: true, full: body.full };
+    return { queued: true, full: body.full, channelId: body.channelId ?? null };
   }
 
   private async completed(req: AdminRequest): Promise<void> {
@@ -192,66 +193,130 @@ export class AdminHashtagsController {
   }
 }
 
-@Controller('admin/radio')
+const ChannelIdPipe = new ZodPipe(z.string().regex(/^\d{1,20}$/, 'invalid channel id'));
+
+@Controller('admin/channels/:channelId/radio')
 @UseGuards(AdminGuard)
 export class AdminRadioController {
   constructor(
     private readonly config: RadioConfigurationService,
     private readonly control: RadioControlService,
-    private readonly engine: PlaybackEngine,
+    private readonly channels: ChannelService,
+    private readonly dashboard: DashboardService,
+    private readonly stations: StationManager,
   ) {}
 
+  private async ch(id: string): Promise<string> {
+    await this.channels.require(id);
+    return id;
+  }
+
+  @Get('dashboard')
+  async channelDashboard(@Param('channelId', ChannelIdPipe) id: string) {
+    return this.dashboard.channel(await this.ch(id));
+  }
+
   @Get('config')
-  getConfig() {
-    return this.config.getConfig();
+  async getConfig(@Param('channelId', ChannelIdPipe) id: string) {
+    return this.config.getConfig(await this.ch(id));
   }
 
   @Put('config')
-  updateConfig(@Body(new ZodPipe(configUpdateSchema)) body: ConfigUpdate, @Req() req: AdminRequest) {
-    return this.config.updateConfig(body, ctxOf(req));
+  async updateConfig(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(configUpdateSchema)) body: ConfigUpdate, @Req() req: AdminRequest) {
+    return this.config.updateConfig(await this.ch(id), body, ctxOf(req));
   }
 
   @Post('rules')
-  createRule(@Body(new ZodPipe(ruleSchema)) body: RuleInput, @Req() req: AdminRequest) {
-    return this.config.createRule(body, ctxOf(req));
+  async createRule(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(ruleSchema)) body: RuleInput, @Req() req: AdminRequest) {
+    return this.config.createRule(await this.ch(id), body, ctxOf(req));
   }
 
-  @Put('rules/:id')
-  updateRule(@Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(ruleSchema)) body: RuleInput, @Req() req: AdminRequest) {
-    return this.config.updateRule(id, body, ctxOf(req));
+  @Put('rules/:ruleId')
+  async updateRule(@Param('channelId', ChannelIdPipe) id: string, @Param('ruleId', ParseUUIDPipe) ruleId: string, @Body(new ZodPipe(ruleSchema)) body: RuleInput, @Req() req: AdminRequest) {
+    return this.config.updateRule(await this.ch(id), ruleId, body, ctxOf(req));
   }
 
-  @Delete('rules/:id')
+  @Delete('rules/:ruleId')
   @HttpCode(204)
-  async deleteRule(@Param('id', ParseUUIDPipe) id: string, @Req() req: AdminRequest): Promise<void> {
-    await this.config.deleteRule(id, ctxOf(req));
+  async deleteRule(@Param('channelId', ChannelIdPipe) id: string, @Param('ruleId', ParseUUIDPipe) ruleId: string, @Req() req: AdminRequest): Promise<void> {
+    await this.config.deleteRule(await this.ch(id), ruleId, ctxOf(req));
   }
 
   @Post('preview')
   @HttpCode(200)
-  preview(@Body(new ZodPipe(previewSchema)) body: PreviewRequest) {
-    return this.config.preview(body);
+  async preview(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(previewSchema)) body: PreviewRequest) {
+    return this.config.preview(await this.ch(id), body);
   }
 
   @Post('skip')
   @HttpCode(202)
-  skip(@Body(new ZodPipe(z.object({ expectedSeq: z.number().int().optional() }).default({}))) body: { expectedSeq?: number }, @Req() req: AdminRequest) {
-    return this.control.skip(body.expectedSeq, ctxOf(req));
+  async skip(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ expectedSeq: z.number().int().optional() }).default({}))) body: { expectedSeq?: number }, @Req() req: AdminRequest) {
+    return this.control.skip(await this.ch(id), body.expectedSeq, ctxOf(req));
   }
 
   @Post('play-next')
   @HttpCode(202)
-  playNext(@Body(new ZodPipe(z.object({ trackId: z.string().uuid().optional() }).default({}))) body: { trackId?: string }, @Req() req: AdminRequest) {
-    return this.control.playNext(body.trackId, ctxOf(req));
+  async playNext(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ trackId: z.string().uuid().optional() }).default({}))) body: { trackId?: string }, @Req() req: AdminRequest) {
+    return this.control.playNext(await this.ch(id), body.trackId, ctxOf(req));
   }
 
   @Get('history')
-  history(@Query(new ZodPipe(z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }))) q: { limit: number }) {
-    return this.control.historyList(q.limit);
+  async history(@Param('channelId', ChannelIdPipe) id: string, @Query(new ZodPipe(z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }))) q: { limit: number }) {
+    return this.control.historyList(await this.ch(id), q.limit);
   }
 
   @Get('state')
-  state() {
-    return { leader: this.engine.running, current: this.engine.current ? { trackId: this.engine.current.track.id, seq: this.engine.current.seq } : null };
+  async state(@Param('channelId', ChannelIdPipe) id: string) {
+    const st = this.stations.get(await this.ch(id));
+    return { leader: st !== undefined, current: st?.engine.current ? { trackId: st.engine.current.track.id, seq: st.engine.current.seq } : null };
+  }
+}
+
+@Controller('admin/channels')
+@UseGuards(AdminGuard)
+export class AdminChannelsController {
+  constructor(private readonly channels: ChannelService, private readonly queue: BullMqJobQueue, private readonly audit: AuditService) {}
+
+  @Get()
+  list() {
+    return this.channels.list();
+  }
+
+  @Post()
+  add(@Body(new ZodPipe(addChannelSchema)) body: { reference: string }, @Req() req: AdminRequest) {
+    return this.channels.add(body.reference, ctxOf(req));
+  }
+
+  @Delete(':channelId')
+  @HttpCode(204)
+  async remove(@Param('channelId', ChannelIdPipe) id: string, @Query(new ZodPipe(z.object({ deleteTracks: z.enum(['true', 'false']).default('false').transform((v) => v === 'true') }))) q: { deleteTracks: boolean }, @Req() req: AdminRequest): Promise<void> {
+    await this.channels.remove(id, q.deleteTracks, ctxOf(req));
+  }
+
+  @Post(':channelId/start')
+  @HttpCode(200)
+  start(@Param('channelId', ChannelIdPipe) id: string, @Req() req: AdminRequest) {
+    return this.channels.setStarted(id, true, ctxOf(req));
+  }
+
+  @Post(':channelId/stop')
+  @HttpCode(200)
+  stop(@Param('channelId', ChannelIdPipe) id: string, @Req() req: AdminRequest) {
+    return this.channels.setStarted(id, false, ctxOf(req));
+  }
+
+  /** Also stream this station inside Telegram itself (the channel's live stream / voice chat). */
+  @Put(':channelId/live')
+  setLive(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ enabled: z.boolean() }))) body: { enabled: boolean }, @Req() req: AdminRequest) {
+    return this.channels.setLive(id, body.enabled, ctxOf(req));
+  }
+
+  @Post(':channelId/sync')
+  @HttpCode(202)
+  async sync(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ full: z.boolean().default(false) }).default({ full: false }))) body: { full: boolean }, @Req() req: AdminRequest) {
+    await this.channels.require(id);
+    await this.queue.enqueueTelegramSync({ channelId: id, full: body.full });
+    await this.audit.record({ actor: req.admin.email, action: 'telegram.sync', entityType: 'channel', entityId: id, after: body, requestId: ctxOf(req).requestId });
+    return { queued: true, full: body.full };
   }
 }

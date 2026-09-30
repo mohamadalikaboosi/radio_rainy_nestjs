@@ -25,7 +25,7 @@ describe('public radio API (e2e, real HTTP)', () => {
     // real clock, tiny bursts: 1s tracks
     h = buildHarness(db, gw, { now: Date.now, sleep: async (ms, signal) => { await new Promise<void>((r) => { const t = setTimeout(r, ms); signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); }); } });
     for (const i of [1, 2]) gw.add(audioMsg(i, `Artist - Song ${i}\nLyrics: https://telegra.ph/s-${i}`, { size: 20000, duration: 1 }), [Buffer.alloc(20000, i)]);
-    await new TelegramTrackDiscovery(gw, new TrackRepository(db)).sync();
+    await new TelegramTrackDiscovery(gw, new TrackRepository(db)).sync('1001');
     app = await createRadioApp(db, h);
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
   });

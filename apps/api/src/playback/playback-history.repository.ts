@@ -20,9 +20,13 @@ export class PlaybackHistoryRepository {
   }
 
   /** Most recent first. */
-  async recentTrackIds(limit: number): Promise<string[]> {
+  async recentTrackIds(channelId: string, limit: number): Promise<string[]> {
     if (limit <= 0) return [];
-    const r = await this.db.query<{ track_id: string }>('SELECT track_id FROM playback_history ORDER BY started_at DESC, id DESC LIMIT $1', [limit]);
+    const r = await this.db.query<{ track_id: string }>(
+      `SELECT p.track_id FROM playback_history p JOIN tracks t ON t.id = p.track_id
+        WHERE t.telegram_channel_id = $1 ORDER BY p.started_at DESC, p.id DESC LIMIT $2`,
+      [channelId, limit],
+    );
     return r.rows.map((x) => x.track_id);
   }
 
@@ -32,11 +36,11 @@ export class PlaybackHistoryRepository {
     return r.rowCount ?? 0;
   }
 
-  async list(limit: number): Promise<{ id: string; trackId: string; title: string; artist: string | null; startedAt: Date; endedAt: Date | null; endReason: string | null }[]> {
+  async list(channelId: string, limit: number): Promise<{ id: string; trackId: string; title: string; artist: string | null; startedAt: Date; endedAt: Date | null; endReason: string | null }[]> {
     const r = await this.db.query<{ id: string; track_id: string; title: string; artist: string | null; started_at: Date; ended_at: Date | null; end_reason: string | null }>(
       `SELECT p.id, p.track_id, t.title, t.artist, p.started_at, p.ended_at, p.end_reason
-         FROM playback_history p JOIN tracks t ON t.id = p.track_id ORDER BY p.started_at DESC LIMIT $1`,
-      [limit],
+         FROM playback_history p JOIN tracks t ON t.id = p.track_id WHERE t.telegram_channel_id = $1 ORDER BY p.started_at DESC LIMIT $2`,
+      [channelId, limit],
     );
     return r.rows.map((x) => ({ id: x.id, trackId: x.track_id, title: x.title, artist: x.artist, startedAt: x.started_at, endedAt: x.ended_at, endReason: x.end_reason }));
   }

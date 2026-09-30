@@ -1,10 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import bigInt from 'big-integer';
 import { Api, TelegramClient } from 'telegram';
-import { APP_CONFIG, AppConfig } from '../config/app-config';
 import { withFloodWait } from './flood-wait';
 import { TelegramClientManager } from './telegram-client.manager';
 import {
+  ChannelDirectory,
   FetchAudioOptions,
   TelegramAudioMessage,
   TelegramChannelInfo,
@@ -64,38 +64,48 @@ export function toAudioMessage(msg: Api.Message, channelId: string, username?: s
 @Injectable()
 export class GramJsTelegramGateway implements TelegramGateway {
   private readonly logger = new Logger(GramJsTelegramGateway.name);
-  private channelCache: { entity: Api.Channel; info: TelegramChannelInfo } | null = null;
+  private readonly cache = new Map<string, { entity: Api.Channel; info: TelegramChannelInfo }>();
 
   constructor(
     private readonly manager: TelegramClientManager,
-    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, 'TELEGRAM_CHANNEL'>,
+    private readonly directory: ChannelDirectory,
   ) {}
 
-  async resolveChannel(): Promise<TelegramChannelInfo> {
-    return (await this.channel()).info;
+  async resolveChannel(reference: string): Promise<TelegramChannelInfo> {
+    return (await this.lookup(reference.trim())).info;
   }
 
-  private async channel(): Promise<{ entity: Api.Channel; info: TelegramChannelInfo }> {
+  private async lookup(ref: string): Promise<{ entity: Api.Channel; info: TelegramChannelInfo }> {
     const client = this.manager.getClient();
-    if (this.channelCache) return this.channelCache;
-    const ref = this.config.TELEGRAM_CHANNEL.trim();
+    const numeric = /^-?\d+$/.test(ref);
     let entity: unknown;
     try {
-      entity = await withFloodWait('getEntity', () => client.getEntity(/^-?\d+$/.test(ref) ? bigInt(ref.replace(/^-100/, '')) : ref));
+      entity = await withFloodWait('getEntity', () => client.getEntity(numeric ? bigInt(ref.replace(/^-100/, '')) : ref));
     } catch (err) {
-      if (!/^-?\d+$/.test(ref)) throw err;
+      if (!numeric) throw err;
       // Numeric ids need the access hash cached: load dialogs once, then retry.
       await withFloodWait('getDialogs', () => client.getDialogs({ limit: 200 }));
       entity = await client.getEntity(new Api.PeerChannel({ channelId: bigInt(ref.replace(/^-100/, '')) }));
     }
-    if (!(entity instanceof Api.Channel)) throw new TelegramMediaError(`TELEGRAM_CHANNEL "${ref}" is not a channel`, false);
+    if (!(entity instanceof Api.Channel)) throw new TelegramMediaError(`"${ref}" is not a channel`, false);
     const info: TelegramChannelInfo = { id: entity.id.toString(), title: entity.title, username: entity.username ?? undefined };
-    this.channelCache = { entity, info };
-    return this.channelCache;
+    const hit = { entity, info };
+    this.cache.set(info.id, hit);
+    return hit;
   }
 
-  async *fetchAudioMessages(opts: FetchAudioOptions = {}): AsyncIterable<TelegramAudioMessage> {
-    const { entity, info } = await this.channel();
+  /** Entity of a known station channel (resolved lazily from its stored reference after restarts). */
+  async entityOf(channelId: string): Promise<{ entity: Api.Channel; info: TelegramChannelInfo }> {
+    const cached = this.cache.get(channelId);
+    if (cached) return cached;
+    const ref = (await this.directory.referenceOf(channelId)) ?? channelId;
+    const found = await this.lookup(ref);
+    if (found.info.id !== channelId) throw new TelegramMediaError(`Channel reference "${ref}" now points to a different channel`, false);
+    return found;
+  }
+
+  async *fetchAudioMessages(channelId: string, opts: FetchAudioOptions = {}): AsyncIterable<TelegramAudioMessage> {
+    const { entity, info } = await this.entityOf(channelId);
     const client = this.manager.getClient();
     const iter = client.iterMessages(entity, {
       filter: new Api.InputMessagesFilterMusic(),
@@ -110,14 +120,14 @@ export class GramJsTelegramGateway implements TelegramGateway {
     }
   }
 
-  async getAudioMessage(messageId: number): Promise<TelegramAudioMessage | null> {
-    const { info } = await this.channel();
-    const m = await this.fetchRaw(messageId);
+  async getAudioMessage(channelId: string, messageId: number): Promise<TelegramAudioMessage | null> {
+    const { info } = await this.entityOf(channelId);
+    const m = await this.fetchRaw(channelId, messageId);
     return m ? toAudioMessage(m, info.id, info.username) : null;
   }
 
-  async existingAudioMessageIds(messageIds: readonly number[]): Promise<Set<number>> {
-    const { entity, info } = await this.channel();
+  async existingAudioMessageIds(channelId: string, messageIds: readonly number[]): Promise<Set<number>> {
+    const { entity, info } = await this.entityOf(channelId);
     const client = this.manager.getClient();
     const found = await withFloodWait('getMessages', () => client.getMessages(entity, { ids: [...messageIds] }));
     const out = new Set<number>();
@@ -127,8 +137,8 @@ export class GramJsTelegramGateway implements TelegramGateway {
     return out;
   }
 
-  private async fetchRaw(messageId: number): Promise<Api.Message | null> {
-    const { entity } = await this.channel();
+  private async fetchRaw(channelId: string, messageId: number): Promise<Api.Message | null> {
+    const { entity } = await this.entityOf(channelId);
     const client = this.manager.getClient();
     const [m] = await withFloodWait('getMessages', () => client.getMessages(entity, { ids: [messageId] }));
     return m instanceof Api.Message ? m : null;
@@ -138,10 +148,10 @@ export class GramJsTelegramGateway implements TelegramGateway {
    * Streams the file in small chunks. The message is re-fetched right before download so the file reference
    * is always fresh (expired references are the classic MTProto download failure).
    */
-  async *download(messageId: number, opts: { offset?: number; signal?: AbortSignal } = {}): AsyncIterable<Uint8Array> {
-    const { entity } = await this.channel();
+  async *download(channelId: string, messageId: number, opts: { offset?: number; signal?: AbortSignal } = {}): AsyncIterable<Uint8Array> {
+    const { entity } = await this.entityOf(channelId);
     const client: TelegramClient = this.manager.getClient();
-    const message = await this.fetchRaw(messageId);
+    const message = await this.fetchRaw(channelId, messageId);
     if (!message || !message.media) throw new TelegramMediaError(`Message ${messageId} not found or has no media`, false);
 
     const iter = client.iterDownload({

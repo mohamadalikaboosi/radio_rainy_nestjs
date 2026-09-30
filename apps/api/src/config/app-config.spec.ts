@@ -5,7 +5,6 @@ const valid = {
   TELEGRAM_API_HASH: 'hash',
   TELEGRAM_SESSION: 'sess',
   TELEGRAM_SESSION_ENCRYPTION_KEY: 'ab'.repeat(32),
-  TELEGRAM_CHANNEL: '@chan',
   DATABASE_URL: 'postgres://u:p@localhost/db',
   REDIS_URL: 'redis://localhost:6379',
   WHISPER_URL: 'http://localhost:9000/v1/audio/transcriptions',
@@ -25,7 +24,7 @@ describe('loadConfig', () => {
     try {
       loadConfig({});
     } catch (e) {
-      expect(String(e)).toContain('TELEGRAM_API_HASH');
+      expect(String(e)).toContain('DATABASE_URL');
       expect(String(e)).toContain('JWT_SECRET');
     }
   });
@@ -50,8 +49,8 @@ describe('loadConfig', () => {
   });
 
   it('tolerates CRLF, spaces and quotes from Windows .env files', () => {
-    const c = loadConfig({ ...valid, TELEGRAM_CHANNEL: '"@chan"\r', ADMIN_EMAIL: ' a@b.co \r', ADMIN_PASSWORD_HASH: 'scrypt:aa:bb\r' });
-    expect(c.TELEGRAM_CHANNEL).toBe('@chan');
+    const c = loadConfig({ ...valid, LOG_LEVEL: ' "info"\r', ADMIN_EMAIL: ' a@b.co \r', ADMIN_PASSWORD_HASH: 'scrypt:aa:bb\r' });
+    expect(c.LOG_LEVEL).toBe('info');
     expect(c.ADMIN_EMAIL).toBe('a@b.co');
     expect(c.ADMIN_PASSWORD_HASH).toBe('scrypt:aa:bb');
   });

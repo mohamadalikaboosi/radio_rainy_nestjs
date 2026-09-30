@@ -40,6 +40,8 @@ interface Plan {
 }
 
 export interface EngineDeps {
+  /** Telegram channel id of the station this engine plays. */
+  channelId: string;
   scheduler: RadioScheduler;
   state: RadioStateRepository;
   history: PlaybackHistoryRepository;
@@ -146,12 +148,12 @@ export class PlaybackEngine {
       const outcome = await this.playOne(plan);
       if (outcome === 'OUTAGE') {
         // Telegram itself is unavailable (not logged in / flood wait): not the tracks' fault, so don't penalize them.
-        await this.d.state.setStatus('ERROR', 'Telegram unavailable');
+        await this.d.state.setStatus(this.d.channelId, 'ERROR', 'Telegram unavailable');
         failures = Math.min(failures + 1, 6);
         await this.idle(Math.min(o.maxBackoffMs, 1000 * 2 ** failures));
       } else if (outcome === 'ERROR') {
         failures++;
-        if (failures >= 3) await this.d.state.setStatus('ERROR', 'Repeated playback failures (Telegram unreachable?)');
+        if (failures >= 3) await this.d.state.setStatus(this.d.channelId, 'ERROR', 'Repeated playback failures (Telegram unreachable?)');
         await this.idle(Math.min(o.maxBackoffMs, 250 * 2 ** failures));
       } else if (outcome === 'OK') {
         failures = 0;
@@ -179,25 +181,25 @@ export class PlaybackEngine {
       this.forcedTrackId = null;
       if (forced) {
         await this.discardPlan();
-        const p = await this.prepare(forced, (await this.d.state.get()).configurationVersion);
+        const p = await this.prepare(forced, (await this.d.state.get(this.d.channelId)).configurationVersion);
         if (p) return p;
       }
       if (this.plan) {
-        const version = (await this.d.state.get()).configurationVersion;
+        const version = (await this.d.state.get(this.d.channelId)).configurationVersion;
         // The preselected track may have been disabled/removed since it was chosen.
         const fresh = await this.d.tracks.findById(this.plan.track.id);
         const stillPlayable = fresh !== null && fresh.status === 'READY' && fresh.enabled;
         if (this.plan.configVersion === version && stillPlayable) {
           const p = this.plan;
           this.plan = null;
-          await this.d.state.setNext(null);
+          await this.d.state.setNext(this.d.channelId, null);
           return p;
         }
         await this.discardPlan();
       }
-      const sel = await this.d.scheduler.selectNext();
+      const sel = await this.d.scheduler.selectNext(this.d.channelId);
       if (!sel.trackId) {
-        await this.d.state.setStatus(sel.reason === 'RADIO_DISABLED' ? 'STOPPED' : 'IDLE', sel.reason);
+        await this.d.state.setStatus(this.d.channelId, sel.reason === 'RADIO_DISABLED' ? 'STOPPED' : 'IDLE', sel.reason);
         this.logger.warn({ msg: 'nothing to play', reason: sel.reason });
         await this.idle(this.d.options.idleRetryMs);
         return null;
@@ -232,14 +234,14 @@ export class PlaybackEngine {
     if (!p) return;
     p.ac.abort();
     await p.audio.cancel().catch((e: unknown) => this.logger.warn({ msg: 'plan cancel failed', err: String(e) }));
-    await this.d.state.setNext(null).catch((e: unknown) => this.logger.warn({ msg: 'clear next failed', err: String(e) }));
+    await this.d.state.setNext(this.d.channelId, null).catch((e: unknown) => this.logger.warn({ msg: 'clear next failed', err: String(e) }));
   }
 
   private planNext(): void {
     if (this.plan || this.planPromise) return;
     this.planPromise = (async () => {
       try {
-        const sel = await this.d.scheduler.selectNext();
+        const sel = await this.d.scheduler.selectNext(this.d.channelId);
         if (!sel.trackId) return;
         const p = await this.prepare(sel.trackId, sel.configVersion);
         if (!p) return;
@@ -249,7 +251,7 @@ export class PlaybackEngine {
           return;
         }
         this.plan = p;
-        await this.d.state.setNext(p.track.id);
+        await this.d.state.setNext(this.d.channelId, p.track.id);
       } catch (err) {
         this.logger.warn({ msg: 'preselect failed; will select at transition', err: err instanceof Error ? err.message : String(err) });
       } finally {
@@ -282,9 +284,9 @@ export class PlaybackEngine {
         if (historyId === null) {
           const startedAt = new Date(this.timeline.anchor + startSent * 1000);
           historyId = await this.d.history.start(track.id, startedAt);
-          const seq = await this.d.state.beginTrack(track.id, historyId, startedAt);
+          const seq = await this.d.state.beginTrack(this.d.channelId, track.id, historyId, startedAt);
           this.currentPlayback = { track, startedAt, historyId, seq, bytesPerSec: audio.bytesPerSec };
-          this.logger.log({ msg: 'playback started', trackId: track.id, title: track.title, artist: track.artist, seq, listeners: this.d.broadcaster.listenerCount });
+          this.logger.log({ msg: 'playback started', channelId: this.d.channelId, trackId: track.id, title: track.title, artist: track.artist, seq, listeners: this.d.broadcaster.listenerCount });
         }
         bytes += slice.length;
         this.d.broadcaster.push(slice);

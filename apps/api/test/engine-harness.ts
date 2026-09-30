@@ -30,9 +30,12 @@ export interface Harness {
   state: RadioStateRepository;
   config: RadioConfigRepository;
   scheduler: RadioScheduler;
+  channelId: string;
 }
 
-export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over: Partial<EngineOptions> = {}, seed = 1): Harness {
+export const CHANNEL = '1001';
+
+export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over: Partial<EngineOptions> = {}, seed = 1, channelId = CHANNEL): Harness {
   const clock = new VirtualClock();
   const tracks = new TrackRepository(db);
   const history = new PlaybackHistoryRepository(db);
@@ -41,6 +44,7 @@ export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over:
   const scheduler = new RadioScheduler(config, history, state, undefined, seededRng(seed));
   const broadcaster = new Broadcaster(8000);
   const engine = new PlaybackEngine({
+    channelId,
     scheduler,
     state,
     history,
@@ -59,7 +63,7 @@ export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over:
       ...over,
     },
   });
-  return { engine, broadcaster, clock, tracks, history, state, config, scheduler };
+  return { engine, broadcaster, clock, tracks, history, state, config, scheduler, channelId };
 }
 
 export async function waitFor(cond: () => boolean | Promise<boolean>, ms = 8000): Promise<void> {

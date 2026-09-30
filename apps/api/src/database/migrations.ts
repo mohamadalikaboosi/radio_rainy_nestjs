@@ -204,4 +204,100 @@ CREATE TABLE telegram_session (
 );
 `,
   },
+  {
+    id: '003_multichannel_settings_language',
+    sql: `
+-- Settings managed from the admin panel. Secrets are AES-256-GCM ciphertext, never plaintext.
+CREATE TABLE app_settings (
+  key TEXT PRIMARY KEY,
+  plain JSONB NOT NULL DEFAULT '{}'::jsonb,
+  secret_ciphertext TEXT,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per Telegram channel = one radio station.
+CREATE TABLE channels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_channel_id BIGINT NOT NULL UNIQUE,
+  reference TEXT NOT NULL,
+  title TEXT NOT NULL,
+  username TEXT,
+  slug TEXT NOT NULL UNIQUE,
+  started BOOLEAN NOT NULL DEFAULT FALSE,
+  telegram_live_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  live_status TEXT NOT NULL DEFAULT 'OFF' ${enumCheck('live_status', ['OFF', 'STARTING', 'LIVE', 'ERROR'])},
+  live_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Radio configuration/state become per channel (config rows are recreated: pre-multichannel installs had none worth keeping).
+DROP TABLE radio_rule_hashtags, radio_rules, radio_hashtag_selection, radio_configuration, radio_state;
+
+CREATE TABLE radio_configuration (
+  channel_id BIGINT PRIMARY KEY REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  mode TEXT NOT NULL DEFAULT 'GLOBAL_RANDOM' ${enumCheck('mode', ['GLOBAL_RANDOM', 'HASHTAG_RANDOM', 'HASHTAG_ROTATION', 'CUSTOM_RULE'])},
+  hashtag_match_mode TEXT NOT NULL DEFAULT 'ANY' ${enumCheck('hashtag_match_mode', ['ANY', 'ALL'])},
+  recent_track_window INTEGER NOT NULL DEFAULT 10 CHECK (recent_track_window >= 0),
+  fallback_to_global BOOLEAN NOT NULL DEFAULT TRUE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE radio_hashtag_selection (
+  channel_id BIGINT NOT NULL REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  hashtag_id UUID NOT NULL REFERENCES hashtags(id) ON DELETE CASCADE,
+  weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 0),
+  position INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (channel_id, hashtag_id)
+);
+CREATE TABLE radio_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id BIGINT NOT NULL REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  priority INTEGER NOT NULL,
+  match_mode TEXT NOT NULL DEFAULT 'ANY' ${enumCheck('match_mode', ['ANY', 'ALL'])},
+  weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 0),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX radio_rules_channel_priority_idx ON radio_rules (channel_id, priority);
+CREATE TABLE radio_rule_hashtags (
+  rule_id UUID NOT NULL REFERENCES radio_rules(id) ON DELETE CASCADE,
+  hashtag_id UUID NOT NULL REFERENCES hashtags(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL ${enumCheck('kind', ['INCLUDE', 'EXCLUDE'])},
+  PRIMARY KEY (rule_id, hashtag_id, kind)
+);
+CREATE TABLE radio_state (
+  channel_id BIGINT PRIMARY KEY REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'STOPPED' ${enumCheck('status', ['PLAYING', 'STOPPED', 'IDLE', 'ERROR'])},
+  status_reason TEXT,
+  current_track_id UUID REFERENCES tracks(id) ON DELETE SET NULL,
+  current_history_id UUID,
+  started_at TIMESTAMPTZ,
+  next_track_id UUID REFERENCES tracks(id) ON DELETE SET NULL,
+  rotation_cursor INTEGER NOT NULL DEFAULT 0,
+  transition_seq BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE tracks ADD COLUMN lyrics_language TEXT;
+CREATE INDEX tracks_channel_idx ON tracks (telegram_channel_id);
+
+-- Learned Persian/English ASR-spelling corrections (what Whisper wrote -> what the lyrics say), trained from aligned songs.
+CREATE TABLE lexicon_entries (
+  lang TEXT NOT NULL,
+  asr_word TEXT NOT NULL,
+  lyric_word TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'LEARNED' ${enumCheck('status', ['LEARNED', 'APPROVED', 'REJECTED'])},
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (lang, asr_word, lyric_word)
+);
+CREATE INDEX lexicon_lang_idx ON lexicon_entries (lang, status);
+`,
+  },
 ];

@@ -4,6 +4,7 @@ import { normalizeHashtag } from '../telegram/caption-parser';
 import { DatabaseService } from '../database/database.service';
 
 export const trackQuerySchema = z.object({
+  channel: z.string().regex(/^\d{1,20}$/).optional(),
   q: z.string().trim().max(200).optional(),
   artist: z.string().trim().max(200).optional(),
   album: z.string().trim().max(200).optional(),
@@ -30,6 +31,7 @@ export interface TrackListItem {
   status: string;
   playCount: number;
   lastPlayedAt: Date | null;
+  channelId: string;
   telegramMessageId: number;
   telegramPostUrl: string | null;
   lyricsUrl: string | null;
@@ -54,6 +56,7 @@ export class TrackQueryRepository {
     const params: unknown[] = [];
     const p = (v: unknown): string => `$${params.push(v)}`;
 
+    if (f.channel) where.push(`t.telegram_channel_id = ${p(f.channel)}`);
     if (f.q) where.push(`(coalesce(t.title,'') || ' ' || coalesce(t.artist,'') || ' ' || coalesce(t.album,'')) ILIKE ${p(`%${escapeLike(f.q)}%`)}`);
     if (f.artist) where.push(`lower(t.artist) = lower(${p(f.artist)})`);
     if (f.album) where.push(`lower(t.album) = lower(${p(f.album)})`);
@@ -77,10 +80,10 @@ export class TrackQueryRepository {
     const offset = p((f.page - 1) * f.pageSize);
     const rows = await this.db.query<{
       id: string; title: string; artist: string | null; album: string | null; duration: number | null; hashtags: string[]; lyrics_status: string;
-      enabled: boolean; status: string; play_count: number; last_played_at: Date | null; telegram_message_id: number; telegram_post_url: string | null; lyrics_url: string | null;
+      enabled: boolean; status: string; play_count: number; last_played_at: Date | null; telegram_channel_id: string; telegram_message_id: number; telegram_post_url: string | null; lyrics_url: string | null;
     }>(
       `SELECT t.id, t.title, t.artist, t.album, t.duration, t.lyrics_status, t.enabled, t.status, t.play_count, t.last_played_at,
-              t.telegram_message_id, t.telegram_post_url, t.lyrics_url,
+              t.telegram_channel_id, t.telegram_message_id, t.telegram_post_url, t.lyrics_url,
               COALESCE((SELECT array_agg(h.value ORDER BY h.normalized_value) FROM track_hashtags th JOIN hashtags h ON h.id = th.hashtag_id WHERE th.track_id = t.id), '{}') AS hashtags
          FROM tracks t ${w} ORDER BY ${SORT_SQL[f.sort]} ${dir} NULLS LAST, t.id LIMIT ${limit} OFFSET ${offset}`,
       params,
@@ -91,7 +94,7 @@ export class TrackQueryRepository {
       pageSize: f.pageSize,
       items: rows.rows.map((r) => ({
         id: r.id, title: r.title, artist: r.artist, album: r.album, duration: r.duration, hashtags: r.hashtags, lyricsStatus: r.lyrics_status, enabled: r.enabled,
-        status: r.status, playCount: r.play_count, lastPlayedAt: r.last_played_at, telegramMessageId: r.telegram_message_id, telegramPostUrl: r.telegram_post_url, lyricsUrl: r.lyrics_url,
+        status: r.status, playCount: r.play_count, lastPlayedAt: r.last_played_at, channelId: r.telegram_channel_id, telegramMessageId: r.telegram_message_id, telegramPostUrl: r.telegram_post_url, lyricsUrl: r.lyrics_url,
       })),
     };
   }

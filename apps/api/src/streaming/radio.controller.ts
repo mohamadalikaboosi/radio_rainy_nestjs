@@ -1,8 +1,8 @@
-import { Controller, Get, Header, Inject, Logger, Req, Res, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Header, Inject, Logger, NotFoundException, Param, Req, Res, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { PlaybackEngine } from '../playback/playback-engine';
+import { ChannelRepository, ChannelRow } from '../channels/channel.repository';
+import { StationManager } from '../playback/station-manager';
 import { CurrentRadioService } from '../radio/current-radio.service';
-import { Broadcaster } from './broadcaster';
 import { HttpListenerSink } from './http-listener-sink';
 
 export const STREAM_OPTIONS = Symbol('STREAM_OPTIONS');
@@ -12,63 +12,115 @@ export interface StreamOptions {
   stationName: string;
 }
 
-/** Public, unauthenticated radio endpoints. Exposes nothing about Telegram or internals. */
+/**
+ * Public, unauthenticated radio endpoints. One radio per channel: `/radio/:slug/...`.
+ * The unprefixed `/radio/stream|current|...` URLs serve the default station (first started channel).
+ * Exposes nothing about Telegram or internals.
+ */
 @Controller('radio')
 export class RadioController {
   private readonly logger = new Logger(RadioController.name);
 
   constructor(
-    private readonly broadcaster: Broadcaster,
-    private readonly engine: PlaybackEngine,
+    private readonly stations: StationManager,
+    private readonly channels: ChannelRepository,
     private readonly current: CurrentRadioService,
     @Inject(STREAM_OPTIONS) private readonly opts: StreamOptions,
   ) {}
 
+  private async resolve(slug?: string): Promise<ChannelRow | null> {
+    return slug ? this.channels.bySlug(slug) : this.channels.defaultChannel();
+  }
+
+  private async require(slug?: string): Promise<ChannelRow> {
+    const c = await this.resolve(slug);
+    if (!c) throw new NotFoundException('Unknown station');
+    return c;
+  }
+
+  @Get('stations')
+  @Header('Cache-Control', 'no-store')
+  async list(): Promise<{ slug: string; title: string; live: boolean }[]> {
+    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined }));
+  }
+
+  // ---- default station (backwards compatible URLs) ----
   @Get('stream')
-  stream(@Req() req: Request, @Res() res: Response): void {
-    if (!this.engine.running) throw new ServiceUnavailableException('Radio is not broadcasting on this instance');
+  streamDefault(@Req() req: Request, @Res() res: Response): Promise<void> {
+    return this.stream(undefined, req, res);
+  }
+  @Get('current')
+  @Header('Cache-Control', 'no-store')
+  currentDefault(): Promise<unknown> {
+    return this.currentTrack(undefined);
+  }
+  @Get('current/lyrics')
+  @Header('Cache-Control', 'no-store')
+  lyricsDefault(): Promise<unknown> {
+    return this.lyricsOf(undefined);
+  }
+  @Get('current/lyrics/active')
+  @Header('Cache-Control', 'no-store')
+  activeDefault(): Promise<unknown> {
+    return this.activeOf(undefined);
+  }
+
+  // ---- per-station ----
+  @Get(':slug/stream')
+  async stream(@Param('slug') slug: string | undefined, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const channel = await this.require(slug);
+    const station = this.stations.get(channel.id);
+    if (!station || !station.engine.running) throw new ServiceUnavailableException('This station is not broadcasting on this instance');
     res.status(200);
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store, no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering (nginx) => lower latency
-    res.setHeader('icy-name', this.opts.stationName);
+    res.setHeader('icy-name', channel.title || this.opts.stationName);
     res.socket?.setNoDelay(true);
     res.socket?.setTimeout(0);
     res.flushHeaders();
 
-    const sink = new HttpListenerSink(res, this.opts.maxBacklogBytes, (reason) =>
-      this.logger.warn({ msg: 'listener dropped', reason, ip: req.ip }),
-    );
-    const unsubscribe = this.broadcaster.subscribe(sink);
-    this.logger.log({ msg: 'listener connected', listeners: this.broadcaster.listenerCount });
+    const sink = new HttpListenerSink(res, this.opts.maxBacklogBytes, (reason) => this.logger.warn({ msg: 'listener dropped', reason, channel: channel.slug, ip: req.ip }));
+    const unsubscribe = station.broadcaster.subscribe(sink);
+    this.logger.log({ msg: 'listener connected', channel: channel.slug, listeners: station.broadcaster.listenerCount });
     // Every way a connection can end frees the subscription (no leaks).
     const cleanup = (): void => {
       unsubscribe();
-      this.logger.log({ msg: 'listener disconnected', listeners: this.broadcaster.listenerCount });
+      this.logger.log({ msg: 'listener disconnected', channel: channel.slug, listeners: station.broadcaster.listenerCount });
     };
     res.once('close', cleanup);
     res.once('error', cleanup);
   }
 
-  @Get('current')
+  @Get(':slug/current')
   @Header('Cache-Control', 'no-store')
-  currentTrack(): Promise<unknown> {
-    return this.current.current();
+  async currentTrack(@Param('slug') slug: string | undefined): Promise<unknown> {
+    const c = await this.resolve(slug);
+    if (!c) return slug ? this.notFound() : { status: 'STOPPED', serverTime: new Date().toISOString() };
+    return this.current.current(c.id);
   }
 
-  @Get('current/lyrics')
+  @Get(':slug/current/lyrics')
   @Header('Cache-Control', 'no-store')
-  async currentLyrics(): Promise<unknown> {
-    return (await this.current.currentLyrics()) ?? { status: 'NONE' };
+  async lyricsOf(@Param('slug') slug: string | undefined): Promise<unknown> {
+    const c = await this.resolve(slug);
+    if (!c) return slug ? this.notFound() : { status: 'NONE' };
+    return (await this.current.currentLyrics(c.id)) ?? { status: 'NONE' };
   }
 
-  @Get('current/lyrics/active')
+  @Get(':slug/current/lyrics/active')
   @Header('Cache-Control', 'no-store')
-  async activeLyric(): Promise<unknown> {
-    const r = await this.current.activeLine();
+  async activeOf(@Param('slug') slug: string | undefined): Promise<unknown> {
+    const c = await this.resolve(slug);
+    if (!c) return slug ? this.notFound() : { index: -1, start: null, end: null, text: null, status: 'NONE' };
+    const r = await this.current.activeLine(c.id);
     if (!r) return { index: -1, start: null, end: null, text: null, status: 'NONE' };
     if (!r.active) return { index: -1, start: null, end: null, text: null, status: r.status, position: r.position, trackId: r.trackId };
     return { ...r.active, status: r.status, position: r.position, trackId: r.trackId };
+  }
+
+  private notFound(): never {
+    throw new NotFoundException('Unknown station');
   }
 }

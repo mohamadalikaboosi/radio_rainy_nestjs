@@ -1,8 +1,9 @@
 import { parseLyricLines, tokenize } from './normalize';
 import { similarity } from './similarity';
+import { EMPTY_LEXICON, LearnedPair, Lexicon } from '../language/lexicon';
 import { Transcript, TranscriptWord } from '../transcription/transcription.types';
 
-export const ALIGNMENT_ALGORITHM_VERSION = 'dp-word-v1';
+export const ALIGNMENT_ALGORITHM_VERSION = 'dp-word-v2-lexicon';
 
 export interface AlignedLine {
   start: number;
@@ -14,7 +15,7 @@ export interface AlignedLine {
 export type AlignmentFailureReason = 'EMPTY_LYRICS' | 'EMPTY_TRANSCRIPT' | 'LOW_COVERAGE' | 'TOO_LARGE';
 
 export type AlignmentResult =
-  | { ok: true; lines: AlignedLine[]; quality: number }
+  | { ok: true; lines: AlignedLine[]; quality: number; learned: LearnedPair[] }
   | { ok: false; reason: AlignmentFailureReason; quality: number };
 
 export interface AlignerOptions {
@@ -71,8 +72,10 @@ export function buildAsrWords(transcript: Transcript): AsrWord[] {
   return out;
 }
 
-function wordScore(a: string, b: string, threshold: number): number {
+function wordScore(a: string, b: string, threshold: number, lexicon: Lexicon): number {
   if (a === b) return 1.5;
+  // learned spelling variant (trusted): as good as a match. equivalent(asrWord, lyricWord): `a` is the lyric word, `b` the ASR word.
+  if (lexicon.equivalent(b, a)) return 1.4;
   if (a.length <= 2 || b.length <= 2) return Number.NEGATIVE_INFINITY;
   const sim = similarity(a, b);
   return sim >= threshold ? 0.5 + sim : Number.NEGATIVE_INFINITY;
@@ -91,6 +94,7 @@ export function alignLyrics(
   rawLyrics: string,
   transcript: Transcript,
   overrides: Partial<AlignerOptions> = {},
+  lexicon: Lexicon = EMPTY_LEXICON,
 ): AlignmentResult {
   const opt: AlignerOptions = { ...DEFAULT_ALIGNER_OPTIONS, ...overrides };
   const lines = parseLyricLines(rawLyrics);
@@ -127,7 +131,7 @@ export function alignLyrics(
         best = left;
         dir = LEFT;
       }
-      const s = wordScore(lw, aw, opt.matchThreshold);
+      const s = wordScore(lw, aw, opt.matchThreshold, lexicon);
       if (s > Number.NEGATIVE_INFINITY) {
         const diag = (score[(i - 1) * w + j - 1] ?? 0) + s;
         if (diag >= best) {
@@ -168,8 +172,37 @@ export function alignLyrics(
     }
   }
 
-  return buildLines(lines, lyricWords, asr, matchOfLyric, opt);
+  const result = buildLines(lines, lyricWords, asr, matchOfLyric, opt);
+  if (!result.ok) return result;
+  // Spelling differences between what was sung (ASR) and the official lyrics: material for the trainable lexicon.
+  const learned: LearnedPair[] = [];
+  if (result.quality >= LEARN_MIN_QUALITY) {
+    const anchors: { i: number; j: number }[] = [];
+    matchOfLyric.forEach((j, i) => {
+      if (j >= 0) anchors.push({ i, j });
+    });
+    // (a) near-miss spellings that were matched by similarity
+    for (const { i, j } of anchors) {
+      const a = asr[j];
+      const l = lyricWords[i];
+      if (a && l && a.norm !== l.norm) learned.push({ asr: a.norm, lyric: l.norm });
+    }
+    // (b) a single lyric word and a single ASR word sitting between the same two anchors: a real substitution
+    // (e.g. sung "cuz" vs written "because"). This is what lets the lexicon fix alignments similarity alone cannot.
+    for (let k = 0; k + 1 < anchors.length; k++) {
+      const p = anchors[k];
+      const n = anchors[k + 1];
+      if (!p || !n || n.i - p.i !== 2 || n.j - p.j !== 2) continue;
+      const a = asr[p.j + 1];
+      const l = lyricWords[p.i + 1];
+      if (a && l && a.norm !== l.norm) learned.push({ asr: a.norm, lyric: l.norm });
+    }
+  }
+  return { ...result, learned };
 }
+
+/** Only well-aligned songs teach the lexicon (poor alignments would teach garbage). */
+const LEARN_MIN_QUALITY = 0.6;
 
 function buildLines(
   lines: { text: string; tokens: string[] }[],
@@ -259,7 +292,7 @@ function buildLines(
     l.end = round(l.end);
     lastEnd = l.end;
   }
-  return { ok: true, lines: result, quality: round(quality) };
+  return { ok: true, lines: result, quality: round(quality), learned: [] };
 }
 
 function round(x: number): number {

@@ -4,7 +4,9 @@ import { AppModule } from '../src/app.module';
 import { hashPassword } from '../src/admin/password';
 import { JobsRunner } from '../src/jobs/jobs-runner';
 import { TelegramClientManager } from '../src/telegram/telegram-client.manager';
-import { TelegramNotReadyError } from '../src/telegram/telegram.types';
+import { GramJsLiveApi } from '../src/live/gramjs-live-api';
+import { TELEGRAM_GATEWAY, TelegramNotReadyError } from '../src/telegram/telegram.types';
+import { FakeTelegramGateway } from './fake-telegram';
 import { freshDb, TEST_DATABASE_URL, TEST_REDIS_URL } from './test-db';
 
 export const ADMIN = { email: 'admin@example.com', password: 'correct horse battery' };
@@ -61,8 +63,9 @@ export function fakeManager(): FakeTelegramManager {
 }
 
 /** Boots the real AppModule (real Postgres + Redis), with Telegram login faked and job workers disabled. */
-export async function bootAdminApp(): Promise<{ app: INestApplication; manager: FakeTelegramManager; restore: () => void }> {
+export async function bootAdminApp(): Promise<{ app: INestApplication; manager: FakeTelegramManager; gateway: FakeTelegramGateway; restore: () => void }> {
   const db = await freshDb();
+  await db.query('UPDATE channels SET started = false');
   await db.onModuleDestroy();
   const saved = { ...process.env };
   Object.assign(process.env, {
@@ -70,7 +73,6 @@ export async function bootAdminApp(): Promise<{ app: INestApplication; manager: 
     LOG_LEVEL: 'silent',
     TELEGRAM_API_ID: '12345',
     TELEGRAM_API_HASH: 'hash-secret-value',
-    TELEGRAM_CHANNEL: '@chan',
     TELEGRAM_SESSION_ENCRYPTION_KEY: 'ab'.repeat(32),
     DATABASE_URL: TEST_DATABASE_URL,
     REDIS_URL: TEST_REDIS_URL,
@@ -82,13 +84,26 @@ export async function bootAdminApp(): Promise<{ app: INestApplication; manager: 
   delete process.env.WHISPER_URL;
   delete process.env.TELEGRAM_SESSION;
   const manager = fakeManager();
+  const gateway = new FakeTelegramGateway();
   const mod = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(TelegramClientManager)
     .useValue(manager)
     .overrideProvider(JobsRunner)
     .useValue({})
+    .overrideProvider(TELEGRAM_GATEWAY)
+    .useValue(gateway)
+    .overrideProvider('LLM_CLIENT')
+    .useValue({
+      chat: async (msgs: { role: string; content: string }[]) => {
+        // deterministic fake linguist: odd ids are the same word, even ids are different words
+        const list = JSON.parse(String(msgs[1]?.content).split('\n')[1] ?? '[]') as { id: number }[];
+        return `Sure!\n${JSON.stringify(list.map((x) => ({ id: x.id, same: x.id % 2 === 1 })))}`;
+      },
+    })
+    .overrideProvider(GramJsLiveApi)
+    .useValue({ openLiveStream: async () => ({ url: 'rtmps://fake.example/s/', key: 'k-123' }), closeLiveStream: async () => undefined })
     .compile();
   const app = mod.createNestApplication();
   await app.init();
-  return { app, manager, restore: () => void (process.env = saved) };
+  return { app, manager, gateway, restore: () => void (process.env = saved) };
 }

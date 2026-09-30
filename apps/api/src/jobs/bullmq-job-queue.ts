@@ -67,7 +67,7 @@ export class BullMqJobQueue implements JobQueue, OnModuleDestroy {
     await this.queues[QUEUES.LYRICS_ALIGNMENT].add('align', p, this.jobOptions(`align_${p.trackId}_${p.transcriptId}`, ATTEMPTS.align, 2_000));
   }
   async enqueueTelegramSync(p: SyncJobPayload): Promise<void> {
-    await this.queues[QUEUES.TELEGRAM_SYNC].add('sync', p, this.jobOptions(p.full ? 'sync_full' : 'sync_incremental', ATTEMPTS.sync, 10_000));
+    await this.queues[QUEUES.TELEGRAM_SYNC].add('sync', p, this.jobOptions(`sync_${p.channelId ?? 'all'}_${p.full ? 'full' : 'inc'}`, ATTEMPTS.sync, 10_000));
   }
 
   /** Periodic incremental sync, registered idempotently (safe to call on every boot). */

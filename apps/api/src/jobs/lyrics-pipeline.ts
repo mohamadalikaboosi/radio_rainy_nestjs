@@ -34,7 +34,7 @@ export class LyricsPipeline {
       const res = await this.lyrics.fetchForTrack(p.trackId, { force: p.force });
       if (res.kind === 'NO_URL') return this.tracks.setLyricsStatus(p.trackId, 'LYRICS_NONE');
       if (res.kind === 'FAILED') return this.tracks.setLyricsStatus(p.trackId, 'LYRICS_FAILED', res.reason);
-      if (!this.transcription.enabled) {
+      if (!(await this.transcription.isEnabled())) {
         // Whisper not configured: raw lyrics stay available, sync is simply off (not an error).
         return this.tracks.setLyricsStatus(p.trackId, 'LYRICS_NONE', 'SYNC_DISABLED');
       }

@@ -2,7 +2,11 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { sign } from 'jsonwebtoken';
 import { ADMIN, bootAdminApp, FakeTelegramManager } from '../../test/admin-app';
+import { FakeTelegramGateway } from '../../test/fake-telegram';
 import { DatabaseService } from '../database/database.service';
+import { LexiconRepository } from '../language/lexicon';
+
+const CH = '1001';
 
 describe('Super Admin API (e2e)', () => {
   let app: INestApplication;
@@ -10,13 +14,14 @@ describe('Super Admin API (e2e)', () => {
   let manager: FakeTelegramManager;
   let restore: () => void;
   let token: string;
+  let gateway: FakeTelegramGateway;
   const auth = () => ({ Authorization: `Bearer ${token}` });
   const http = () => request(app.getHttpServer());
 
   async function seedTrack(msg: number, title: string, tags: string[], over: { enabled?: boolean; lyrics?: string } = {}): Promise<string> {
     const r = await db.query<{ id: string }>(
       `INSERT INTO tracks (telegram_channel_id, telegram_message_id, title, artist, telegram_file_reference, mime_type, duration, file_size, enabled, lyrics_status, lyrics_url)
-       VALUES (1, $1, $2, 'Artist', 'ref', 'audio/mpeg', 200, 3200000, $3, $4, $5) RETURNING id`,
+       VALUES (1001, $1, $2, 'Artist', 'ref', 'audio/mpeg', 200, 3200000, $3, $4, $5) RETURNING id`,
       [msg, title, over.enabled ?? true, over.lyrics ?? 'LYRICS_NONE', over.lyrics && over.lyrics !== 'LYRICS_NONE' ? `https://telegra.ph/t-${msg}` : null],
     );
     const id = r.rows[0]?.id ?? '';
@@ -28,7 +33,7 @@ describe('Super Admin API (e2e)', () => {
   }
 
   beforeAll(async () => {
-    ({ app, manager, restore } = await bootAdminApp());
+    ({ app, manager, gateway, restore } = await bootAdminApp());
     db = app.get(DatabaseService);
     const r = await http().post('/admin/auth/login').send(ADMIN).expect(200);
     token = r.body.token;
@@ -79,11 +84,18 @@ describe('Super Admin API (e2e)', () => {
   });
 
   describe('dashboard', () => {
-    it('shows counts, selection and telegram state', async () => {
+    it('overview: global counts + one entry per station + telegram state', async () => {
       const d = (await http().get('/admin/dashboard').set(auth()).expect(200)).body;
       expect(d.counts).toMatchObject({ totalTracks: 5, playableTracks: 5, tracksWithLyrics: 1, tracksWaitingForLyrics: 1, failedLyrics: 1, hashtags: 4 });
-      expect(d.radio.selection.mode).toBe('GLOBAL_RANDOM');
+      expect(d.stations).toHaveLength(1);
+      expect(d.stations[0]).toMatchObject({ id: CH, slug: 'chan', started: false });
       expect(d.telegram.state).toBe('NOT_LOGGED_IN');
+    });
+    it('per-channel dashboard: selection + counts scoped to the channel', async () => {
+      const d = (await http().get(`/admin/channels/${CH}/radio/dashboard`).set(auth()).expect(200)).body;
+      expect(d.radio.selection.mode).toBe('GLOBAL_RANDOM');
+      expect(d.counts.totalTracks).toBe(5);
+      await http().get('/admin/channels/999999/radio/dashboard').set(auth()).expect(404);
     });
   });
 
@@ -125,8 +137,8 @@ describe('Super Admin API (e2e)', () => {
 
   describe('radio configuration', () => {
     it('updates atomically, bumps version, audits before/after', async () => {
-      const cur = (await http().get('/admin/radio/config').set(auth()).expect(200)).body;
-      const r = await http().put('/admin/radio/config').set(auth()).send({
+      const cur = (await http().get(`/admin/channels/${CH}/radio/config`).set(auth()).expect(200)).body;
+      const r = await http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send({
         mode: 'HASHTAG_RANDOM', hashtagMatchMode: 'ANY', recentTrackWindow: 3, hashtags: [{ hashtag: '#Rain', weight: 50 }, { hashtag: 'night', weight: 30 }], expectedVersion: cur.version,
       }).expect(200);
       expect(r.body).toMatchObject({ version: cur.version + 1, mode: 'HASHTAG_RANDOM', recentTrackWindow: 3 });
@@ -138,58 +150,58 @@ describe('Super Admin API (e2e)', () => {
     });
 
     it('rejects stale versions (409), unknown hashtags (400) and bad input', async () => {
-      const cur = (await http().get('/admin/radio/config').set(auth())).body;
+      const cur = (await http().get(`/admin/channels/${CH}/radio/config`).set(auth())).body;
       const base = { mode: 'GLOBAL_RANDOM', hashtagMatchMode: 'ANY', recentTrackWindow: 3, hashtags: [] };
-      await http().put('/admin/radio/config').set(auth()).send({ ...base, expectedVersion: cur.version - 1 }).expect(409);
-      await http().put('/admin/radio/config').set(auth()).send({ ...base, hashtags: [{ hashtag: 'doesnotexist' }] }).expect(400);
-      await http().put('/admin/radio/config').set(auth()).send({ ...base, mode: 'NOPE' }).expect(400);
-      await http().put('/admin/radio/config').set(auth()).send({ ...base, recentTrackWindow: -1 }).expect(400);
-      expect((await http().get('/admin/radio/config').set(auth())).body.version).toBe(cur.version); // nothing changed
+      await http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send({ ...base, expectedVersion: cur.version - 1 }).expect(409);
+      await http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send({ ...base, hashtags: [{ hashtag: 'doesnotexist' }] }).expect(400);
+      await http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send({ ...base, mode: 'NOPE' }).expect(400);
+      await http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send({ ...base, recentTrackWindow: -1 }).expect(400);
+      expect((await http().get(`/admin/channels/${CH}/radio/config`).set(auth())).body.version).toBe(cur.version); // nothing changed
     });
 
     it('concurrent updates with the same expectedVersion: exactly one wins, version increments once', async () => {
-      const cur = (await http().get('/admin/radio/config').set(auth())).body;
+      const cur = (await http().get(`/admin/channels/${CH}/radio/config`).set(auth())).body;
       const body = { mode: 'GLOBAL_RANDOM', hashtagMatchMode: 'ANY', recentTrackWindow: 5, hashtags: [], expectedVersion: cur.version };
-      const res = await Promise.all(Array.from({ length: 10 }, () => http().put('/admin/radio/config').set(auth()).send(body)));
+      const res = await Promise.all(Array.from({ length: 10 }, () => http().put(`/admin/channels/${CH}/radio/config`).set(auth()).send(body)));
       expect(res.filter((r) => r.status === 200)).toHaveLength(1);
       expect(res.filter((r) => r.status === 409)).toHaveLength(9);
-      expect((await http().get('/admin/radio/config').set(auth())).body.version).toBe(cur.version + 1);
+      expect((await http().get(`/admin/channels/${CH}/radio/config`).set(auth())).body.version).toBe(cur.version + 1);
     });
 
     it('preview uses the real engine: ANY -> A,C,D,E ; ALL -> A,E ; deterministic per seed', async () => {
-      const any = (await http().post('/admin/radio/preview').set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ANY', limit: 40, seed: 12345 }).expect(200)).body;
+      const any = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ANY', limit: 40, seed: 12345 }).expect(200)).body;
       expect(any.eligibleCount).toBe(4);
       expect(new Set(any.tracks.map((t: { title: string }) => t.title))).toEqual(new Set(['Song A', 'Song C', 'Song D', 'Song E']));
-      const all = (await http().post('/admin/radio/preview').set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ALL', limit: 40, seed: 12345, recentTrackWindow: 1 }).expect(200)).body;
+      const all = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ALL', limit: 40, seed: 12345, recentTrackWindow: 1 }).expect(200)).body;
       expect(all.eligibleCount).toBe(2);
       expect(new Set(all.tracks.map((t: { title: string }) => t.title))).toEqual(new Set(['Song A', 'Song E']));
-      const again = (await http().post('/admin/radio/preview').set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ANY', limit: 40, seed: 12345 })).body;
+      const again = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'HASHTAG_RANDOM', hashtags: ['rain', 'night'], match: 'ANY', limit: 40, seed: 12345 })).body;
       expect(again.tracks.map((t: { id: string }) => t.id)).toEqual(any.tracks.map((t: { id: string }) => t.id));
     });
 
     it('rules: CRUD, priority evaluation in preview, persisted with audit', async () => {
-      const r1 = (await http().post('/admin/radio/rules').set(auth()).send({ name: 'Late night rain', priority: 1, matchMode: 'ALL', include: ['rain', 'night'], exclude: ['chill'], weight: 80 }).expect(201)).body;
+      const r1 = (await http().post(`/admin/channels/${CH}/radio/rules`).set(auth()).send({ name: 'Late night rain', priority: 1, matchMode: 'ALL', include: ['rain', 'night'], exclude: ['chill'], weight: 80 }).expect(201)).body;
       expect(r1).toMatchObject({ name: 'Late night rain', include: ['rain', 'night'], exclude: ['chill'] });
-      await http().post('/admin/radio/rules').set(auth()).send({ name: 'Chill', priority: 2, include: ['chill'] }).expect(201);
-      const p = (await http().post('/admin/radio/preview').set(auth()).send({ mode: 'CUSTOM_RULE', limit: 20, seed: 1, recentTrackWindow: 0 }).expect(200)).body;
+      await http().post(`/admin/channels/${CH}/radio/rules`).set(auth()).send({ name: 'Chill', priority: 2, include: ['chill'] }).expect(201);
+      const p = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'CUSTOM_RULE', limit: 20, seed: 1, recentTrackWindow: 0 }).expect(200)).body;
       expect(new Set(p.tracks.map((t: { title: string }) => t.title))).toEqual(new Set(['Song A'])); // priority 1 wins, E excluded by #chill
-      await http().put(`/admin/radio/rules/${r1.id}`).set(auth()).send({ name: 'Late night rain', priority: 1, matchMode: 'ALL', include: ['rain', 'night'], exclude: [], enabled: false }).expect(200);
-      const p2 = (await http().post('/admin/radio/preview').set(auth()).send({ mode: 'CUSTOM_RULE', limit: 30, seed: 1, recentTrackWindow: 0 })).body;
+      await http().put(`/admin/channels/${CH}/radio/rules/${r1.id}`).set(auth()).send({ name: 'Late night rain', priority: 1, matchMode: 'ALL', include: ['rain', 'night'], exclude: [], enabled: false }).expect(200);
+      const p2 = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'CUSTOM_RULE', limit: 30, seed: 1, recentTrackWindow: 0 })).body;
       expect(new Set(p2.tracks.map((t: { title: string }) => t.title))).toEqual(new Set(['Song C', 'Song D', 'Song E']));
-      await http().delete(`/admin/radio/rules/${r1.id}`).set(auth()).expect(204);
-      await http().delete(`/admin/radio/rules/${r1.id}`).set(auth()).expect(404);
-      await http().post('/admin/radio/rules').set(auth()).send({ name: 'x', priority: 1, include: [] }).expect(400);
+      await http().delete(`/admin/channels/${CH}/radio/rules/${r1.id}`).set(auth()).expect(204);
+      await http().delete(`/admin/channels/${CH}/radio/rules/${r1.id}`).set(auth()).expect(404);
+      await http().post(`/admin/channels/${CH}/radio/rules`).set(auth()).send({ name: 'x', priority: 1, include: [] }).expect(400);
       const actions = (await http().get('/admin/audit?entityType=radio_rule&limit=50').set(auth())).body.items.map((i: { action: string }) => i.action);
       expect(actions).toEqual(expect.arrayContaining(['radio.rule.create', 'radio.rule.update', 'radio.rule.delete']));
     });
 
     it('skip / play-next are accepted, audited; play-next validates the track', async () => {
-      await http().post('/admin/radio/skip').set(auth()).send({}).expect(202);
-      await http().post('/admin/radio/play-next').set(auth()).send({}).expect(202);
-      await http().post('/admin/radio/play-next').set(auth()).send({ trackId: ids.A }).expect(202);
-      await http().post('/admin/radio/play-next').set(auth()).send({ trackId: '00000000-0000-0000-0000-000000000000' }).expect(404);
+      await http().post(`/admin/channels/${CH}/radio/skip`).set(auth()).send({}).expect(202);
+      await http().post(`/admin/channels/${CH}/radio/play-next`).set(auth()).send({}).expect(202);
+      await http().post(`/admin/channels/${CH}/radio/play-next`).set(auth()).send({ trackId: ids.A }).expect(202);
+      await http().post(`/admin/channels/${CH}/radio/play-next`).set(auth()).send({ trackId: '00000000-0000-0000-0000-000000000000' }).expect(404);
       await db.query('UPDATE tracks SET enabled = false WHERE id = $1', [ids.D]);
-      await http().post('/admin/radio/play-next').set(auth()).send({ trackId: ids.D }).expect(400);
+      await http().post(`/admin/channels/${CH}/radio/play-next`).set(auth()).send({ trackId: ids.D }).expect(400);
       await db.query('UPDATE tracks SET enabled = true WHERE id = $1', [ids.D]);
       const actions = (await http().get('/admin/audit?limit=100').set(auth())).body.items.map((i: { action: string }) => i.action);
       expect(actions).toEqual(expect.arrayContaining(['radio.skip', 'radio.play-next']));
@@ -232,6 +244,155 @@ describe('Super Admin API (e2e)', () => {
       expect((await http().post('/admin/telegram/logout').set(auth()).expect(200)).body.state).toBe('NOT_LOGGED_IN');
       await http().post('/admin/sync').set(auth()).send({ full: true }).expect(202);
       await http().post('/admin/sync').set(auth()).send({}).expect(202);
+    });
+  });
+
+
+  describe('channels (multi-channel stations)', () => {
+    let second = '';
+    it('adds a channel resolved through Telegram; rejects duplicates, unknown references and logged-out state', async () => {
+      gateway.addChannel('@second', { id: '2002', title: 'Second Radio', username: 'second' });
+      const r = (await http().post('/admin/channels').set(auth()).send({ reference: '@second' }).expect(201)).body;
+      second = r.id;
+      expect(r).toMatchObject({ id: '2002', slug: 'second', started: false, telegramLiveEnabled: false });
+      await http().post('/admin/channels').set(auth()).send({ reference: '@second' }).expect(409);
+      const bad = await http().post('/admin/channels').set(auth()).send({ reference: '@nope' }).expect(400);
+      expect(bad.body.telegramError).toBe('USERNAME_NOT_OCCUPIED');
+      gateway.notReady = true;
+      const off = await http().post('/admin/channels').set(auth()).send({ reference: '@another' }).expect(400);
+      expect(JSON.stringify(off.body)).toMatch(/Log in to Telegram first/);
+      gateway.notReady = false;
+      // every station gets its own configuration and state
+      expect(Number((await db.query(`SELECT count(*) AS n FROM radio_configuration WHERE channel_id = 2002`)).rows[0]?.n)).toBe(1);
+      expect(Number((await db.query(`SELECT count(*) AS n FROM radio_state WHERE channel_id = 2002`)).rows[0]?.n)).toBe(1);
+    });
+
+    it('stations are isolated: tracks, selection and config are per channel', async () => {
+      const t = await db.query<{ id: string }>(`INSERT INTO tracks (telegram_channel_id, telegram_message_id, title, artist, telegram_file_reference, mime_type, duration, file_size) VALUES (2002, 1, 'Second Only', 'X', 'r', 'audio/mpeg', 100, 1600000) RETURNING id`);
+      void t;
+      const p2 = (await http().post(`/admin/channels/${second}/radio/preview`).set(auth()).send({ mode: 'GLOBAL_RANDOM', limit: 10, seed: 1 }).expect(200)).body;
+      expect(new Set(p2.tracks.map((x: { title: string }) => x.title))).toEqual(new Set(['Second Only']));
+      const p1 = (await http().post(`/admin/channels/${CH}/radio/preview`).set(auth()).send({ mode: 'GLOBAL_RANDOM', limit: 30, seed: 1 }).expect(200)).body;
+      expect(p1.tracks.map((x: { title: string }) => x.title)).not.toContain('Second Only');
+      // config is independent
+      const c2 = (await http().get(`/admin/channels/${second}/radio/config`).set(auth())).body;
+      expect(c2.mode).toBe('GLOBAL_RANDOM');
+      expect(c2.hashtags).toEqual([]);
+      // track list filter
+      expect((await http().get(`/admin/tracks?channel=${second}`).set(auth())).body.total).toBe(1);
+      expect((await http().get(`/admin/tracks?channel=${CH}`).set(auth())).body.total).toBe(5);
+      // play-next only accepts tracks of the same channel
+      await http().post(`/admin/channels/${CH}/radio/play-next`).set(auth()).send({ trackId: t.rows[0]?.id }).expect(400);
+    });
+
+    it('start / stop are idempotent, audited, and the leader reacts (public station list)', async () => {
+      const s1 = await http().post(`/admin/channels/${second}/start`).set(auth()).expect(200);
+      expect(s1.body.started).toBe(true);
+      await http().post(`/admin/channels/${second}/start`).set(auth()).expect(200);
+      const starts = await db.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'channel.start' AND entity_id = '2002'`);
+      expect((starts.rows[0] as { n: number }).n).toBe(1);
+      // leader reconciles asynchronously
+      let live = false;
+      for (let i = 0; i < 60 && !live; i++) {
+        const list = (await http().get('/radio/stations')).body as { slug: string; live: boolean }[];
+        live = list.some((x) => x.slug === 'second' && x.live);
+        if (!live) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(live).toBe(true);
+      expect(JSON.stringify((await http().get('/radio/stations')).body)).not.toMatch(/2002|reference|telegram/i);
+    });
+
+    it('Telegram live stream toggle: reported per channel (ffmpeg missing/unreachable => ERROR with reason), off again', async () => {
+      const on = (await http().put(`/admin/channels/${second}/live`).set(auth()).send({ enabled: true }).expect(200)).body;
+      expect(on.telegramLiveEnabled).toBe(true);
+      let status = 'OFF';
+      for (let i = 0; i < 80 && (status === 'OFF' || status === 'STARTING'); i++) {
+        status = (await db.query<{ live_status: string }>(`SELECT live_status FROM channels WHERE telegram_channel_id = 2002`)).rows[0]?.live_status ?? 'OFF';
+        if (status === 'OFF' || status === 'STARTING') await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(['LIVE', 'ERROR']).toContain(status);
+      const off = (await http().put(`/admin/channels/${second}/live`).set(auth()).send({ enabled: false }).expect(200)).body;
+      expect(off).toMatchObject({ telegramLiveEnabled: false, liveStatus: 'OFF' });
+    });
+
+    it('public API is per station and never leaks unknown stations', async () => {
+      await http().get('/radio/unknown-station/current').expect(404);
+      expect((await http().get('/radio/second/current').expect(200)).body).toHaveProperty('status');
+      await http().get('/radio/unknown-station/stream').expect(404);
+    });
+
+    it('stop, then remove with its tracks', async () => {
+      await http().post(`/admin/channels/${second}/stop`).set(auth()).expect(200);
+      await http().delete(`/admin/channels/${second}?deleteTracks=true`).set(auth()).expect(204);
+      expect(Number((await db.query(`SELECT count(*) AS n FROM tracks WHERE telegram_channel_id = 2002`)).rows[0]?.n)).toBe(0);
+      expect(Number((await db.query(`SELECT count(*) AS n FROM radio_state WHERE channel_id = 2002`)).rows[0]?.n)).toBe(0);
+      await http().delete(`/admin/channels/${second}`).set(auth()).expect(404);
+    });
+  });
+
+  describe('settings stored in the database (secrets encrypted)', () => {
+    it('Telegram API id/hash: write-only secret, encrypted at rest, audited without the value', async () => {
+      const before = (await http().get('/admin/settings').set(auth()).expect(200)).body;
+      expect(before.telegram.source).toBe('environment');
+      const res = (await http().put('/admin/settings/telegram').set(auth()).send({ apiId: 777, apiHash: 'db-stored-secret-hash' }).expect(200)).body;
+      expect(res.telegram).toEqual({ apiId: 777, apiHashSet: true, source: 'database' });
+      expect(JSON.stringify(res)).not.toContain('db-stored-secret-hash');
+      const raw = JSON.stringify((await db.query('SELECT * FROM app_settings')).rows);
+      expect(raw).not.toContain('db-stored-secret-hash');
+      const audit = JSON.stringify((await db.query(`SELECT after FROM audit_logs WHERE action = 'settings.telegram.update'`)).rows);
+      expect(audit).toContain('apiHashChanged');
+      expect(audit).not.toContain('db-stored-secret-hash');
+      await http().put('/admin/settings/telegram').set(auth()).send({ apiId: -1 }).expect(400);
+    });
+
+    it('Whisper: url/model/language/48 kHz, key never returned; invalid url rejected; can be disabled', async () => {
+      const r = (await http().put('/admin/settings/whisper').set(auth()).send({ url: 'http://localhost:8000/v1/audio/transcriptions', model: 'Systran/faster-whisper-small', language: 'fa', sampleRate: 48000, timeoutSeconds: 900, apiKey: 'whisper-key-123' }).expect(200)).body;
+      expect(r.whisper).toMatchObject({ enabled: true, model: 'Systran/faster-whisper-small', language: 'fa', sampleRate: 48000, apiKeySet: true, source: 'database' });
+      expect(JSON.stringify(r)).not.toContain('whisper-key-123');
+      await http().put('/admin/settings/whisper').set(auth()).send({ url: 'not a url' }).expect(400);
+      const off = (await http().put('/admin/settings/whisper').set(auth()).send({ url: '', clearApiKey: true }).expect(200)).body;
+      expect(off.whisper.apiKeySet).toBe(false);
+    });
+
+    it('LLM settings', async () => {
+      const r = (await http().put('/admin/settings/llm').set(auth()).send({ enabled: true, url: 'http://localhost:11434/v1', model: 'qwen2.5', apiKey: 'llm-key' }).expect(200)).body;
+      expect(r.llm).toEqual({ enabled: true, url: 'http://localhost:11434/v1', model: 'qwen2.5', apiKeySet: true });
+    });
+  });
+
+  describe('Persian / English language learning', () => {
+    it('lexicon: list, approve/reject, delete; LLM review; retrain; dataset export', async () => {
+      const lex = app.get(LexiconRepository);
+      await lex.learn('fa', [{ asr: 'بارون', lyric: 'باران' }, { asr: 'دوستت', lyric: 'دوستت‌' }, { asr: 'کنی', lyric: 'کنی' }]); // identical pair ignored
+      await lex.learn('fa', [{ asr: 'بارون', lyric: 'باران' }]);
+      await lex.learn('en', [{ asr: 'gonna', lyric: 'going' }, { asr: 'wanna', lyric: 'want' }]);
+      const list = (await http().get('/admin/language/lexicon?lang=fa').set(auth()).expect(200)).body;
+      expect(list.total).toBe(2);
+      expect(list.items[0]).toMatchObject({ asrWord: 'بارون', lyricWord: 'باران', count: 2, status: 'LEARNED' });
+
+      const stats = (await http().get('/admin/language/stats').set(auth()).expect(200)).body;
+      expect(stats.lexicon.find((x: { lang: string }) => x.lang === 'fa')).toMatchObject({ entries: 2, trusted: 1 });
+
+      // LLM review (fake linguist: odd ids same, even ids different)
+      const rv = (await http().post('/admin/language/review').set(auth()).send({ lang: 'en', limit: 10 }).expect(200)).body;
+      expect(rv).toMatchObject({ reviewed: 2, approved: 1, rejected: 1, skipped: 0 });
+      const en = (await http().get('/admin/language/lexicon?lang=en').set(auth())).body.items.map((x: { status: string }) => x.status).sort();
+      expect(en).toEqual(['APPROVED', 'REJECTED']);
+
+      await http().patch('/admin/language/lexicon').set(auth()).send({ lang: 'fa', asrWord: 'دوستت', lyricWord: 'دوستت‌', status: 'REJECTED' }).expect(200);
+      await http().delete('/admin/language/lexicon?lang=fa&asrWord=' + encodeURIComponent('دوستت') + '&lyricWord=' + encodeURIComponent('دوستت‌')).set(auth()).expect(204);
+      expect((await http().get('/admin/language/lexicon?lang=fa').set(auth())).body.total).toBe(1);
+
+      const rt = (await http().post('/admin/language/retrain').set(auth()).send({}).expect(200)).body;
+      expect(rt).toMatchObject({ processed: 0 });
+
+      const ex = await http().get('/admin/language/export').set(auth()).expect(200);
+      expect(ex.headers['content-type']).toContain('ndjson');
+    });
+
+    it('a fresh lexicon entry changes alignment; language endpoints require auth', async () => {
+      await http().get('/admin/language/stats').expect(401);
+      await http().post('/admin/language/review').send({ lang: 'fa' }).expect(401);
     });
   });
 

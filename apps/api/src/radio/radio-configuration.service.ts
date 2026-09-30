@@ -79,8 +79,8 @@ export class RadioConfigurationService {
     private readonly engine: RadioRuleEngine = new RadioRuleEngine(),
   ) {}
 
-  async getConfig(): Promise<ConfigView> {
-    return this.view(await this.repo.getSnapshot());
+  async getConfig(channelId: string): Promise<ConfigView> {
+    return this.view(await this.repo.getSnapshot(channelId));
   }
 
   private view(c: RadioConfigWithMeta): ConfigView {
@@ -96,81 +96,82 @@ export class RadioConfigurationService {
     };
   }
 
-  async updateConfig(input: ConfigUpdate, ctx: ActorContext): Promise<ConfigView> {
+  async updateConfig(channelId: string, input: ConfigUpdate, ctx: ActorContext): Promise<ConfigView> {
     const after = await this.db.tx(async (q) => {
-      await this.lockConfig(q, input.expectedVersion);
-      const before = this.view(await this.repo.getSnapshot(q));
+      await this.lockConfig(q, channelId, input.expectedVersion);
+      const before = this.view(await this.repo.getSnapshot(channelId, q));
       const ids = await this.resolveHashtagIds(q, input.hashtags.map((h) => h.hashtag));
       await q.query(
         `UPDATE radio_configuration SET mode=$1, hashtag_match_mode=$2, recent_track_window=$3, fallback_to_global=$4, enabled=$5,
-                version = version + 1, updated_by=$6, updated_at=now() WHERE id = 1`,
-        [input.mode, input.hashtagMatchMode, input.recentTrackWindow, input.fallbackToGlobal, input.enabled, ctx.actor],
+                version = version + 1, updated_by=$6, updated_at=now() WHERE channel_id = $7`,
+        [input.mode, input.hashtagMatchMode, input.recentTrackWindow, input.fallbackToGlobal, input.enabled, ctx.actor, channelId],
       );
-      await q.query('DELETE FROM radio_hashtag_selection');
+      await q.query('DELETE FROM radio_hashtag_selection WHERE channel_id = $1', [channelId]);
       for (const [i, h] of input.hashtags.entries()) {
         const id = ids.get(h.hashtag);
-        if (id) await q.query('INSERT INTO radio_hashtag_selection (hashtag_id, weight, position) VALUES ($1,$2,$3) ON CONFLICT (hashtag_id) DO UPDATE SET weight=$2, position=$3', [id, h.weight, i]);
+        if (id) await q.query('INSERT INTO radio_hashtag_selection (channel_id, hashtag_id, weight, position) VALUES ($1,$2,$3,$4) ON CONFLICT (channel_id, hashtag_id) DO UPDATE SET weight=$3, position=$4', [channelId, id, h.weight, i]);
       }
-      const after = this.view(await this.repo.getSnapshot(q));
-      await this.audit.record({ actor: ctx.actor, action: 'radio.config.update', entityType: 'radio_configuration', entityId: '1', before, after: { ...after, apply: input.apply }, requestId: ctx.requestId }, q);
+      const after = this.view(await this.repo.getSnapshot(channelId, q));
+      await this.audit.record({ actor: ctx.actor, action: 'radio.config.update', entityType: 'radio_configuration', entityId: channelId, before, after: { ...after, apply: input.apply }, requestId: ctx.requestId }, q);
       return after;
     });
-    await this.bus.publish({ type: 'config-changed' });
-    if (input.apply === 'IMMEDIATE') await this.bus.publish({ type: 'play-next' });
+    await this.bus.publish({ type: 'config-changed', channelId });
+    if (input.apply === 'IMMEDIATE') await this.bus.publish({ type: 'play-next', channelId });
     return after;
   }
 
   // ---- rules ----
 
-  async createRule(input: RuleInput, ctx: ActorContext): Promise<ConfigView['rules'][number]> {
-    return this.mutateRules(ctx, 'radio.rule.create', async (q) => {
+  async createRule(channelId: string, input: RuleInput, ctx: ActorContext): Promise<ConfigView['rules'][number]> {
+    return this.mutateRules(channelId, ctx, 'radio.rule.create', async (q) => {
       const ids = await this.resolveHashtagIds(q, [...input.include, ...input.exclude]);
-      const r = await q.query<{ id: string }>('INSERT INTO radio_rules (name, priority, match_mode, weight, enabled) VALUES ($1,$2,$3,$4,$5) RETURNING id', [input.name, input.priority, input.matchMode, input.weight, input.enabled]);
+      const r = await q.query<{ id: string }>('INSERT INTO radio_rules (channel_id, name, priority, match_mode, weight, enabled) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [channelId, input.name, input.priority, input.matchMode, input.weight, input.enabled]);
       const id = r.rows[0]?.id ?? '';
       await this.writeRuleTags(q, id, input, ids);
       return { id, before: null };
     });
   }
 
-  async updateRule(id: string, input: RuleInput, ctx: ActorContext): Promise<ConfigView['rules'][number]> {
-    return this.mutateRules(ctx, 'radio.rule.update', async (q) => {
-      const before = (await this.repo.getSnapshot(q)).snapshot.rules.find((r) => r.id === id);
+  async updateRule(channelId: string, id: string, input: RuleInput, ctx: ActorContext): Promise<ConfigView['rules'][number]> {
+    return this.mutateRules(channelId, ctx, 'radio.rule.update', async (q) => {
+      const before = (await this.repo.getSnapshot(channelId, q)).snapshot.rules.find((r) => r.id === id);
       if (!before) throw new NotFoundException('Rule not found');
       const ids = await this.resolveHashtagIds(q, [...input.include, ...input.exclude]);
-      await q.query('UPDATE radio_rules SET name=$2, priority=$3, match_mode=$4, weight=$5, enabled=$6, updated_at=now() WHERE id=$1', [id, input.name, input.priority, input.matchMode, input.weight, input.enabled]);
+      await q.query('UPDATE radio_rules SET name=$3, priority=$4, match_mode=$5, weight=$6, enabled=$7, updated_at=now() WHERE id=$1 AND channel_id=$2', [id, channelId, input.name, input.priority, input.matchMode, input.weight, input.enabled]);
       await q.query('DELETE FROM radio_rule_hashtags WHERE rule_id = $1', [id]);
       await this.writeRuleTags(q, id, input, ids);
       return { id, before };
     });
   }
 
-  async deleteRule(id: string, ctx: ActorContext): Promise<void> {
+  async deleteRule(channelId: string, id: string, ctx: ActorContext): Promise<void> {
     await this.db.tx(async (q) => {
-      await this.lockConfig(q);
-      const before = (await this.repo.getSnapshot(q)).snapshot.rules.find((r) => r.id === id);
+      await this.lockConfig(q, channelId);
+      const before = (await this.repo.getSnapshot(channelId, q)).snapshot.rules.find((r) => r.id === id);
       if (!before) throw new NotFoundException('Rule not found');
-      await q.query('DELETE FROM radio_rules WHERE id = $1', [id]);
-      await q.query('UPDATE radio_configuration SET version = version + 1, updated_by = $1, updated_at = now() WHERE id = 1', [ctx.actor]);
+      await q.query('DELETE FROM radio_rules WHERE id = $1 AND channel_id = $2', [id, channelId]);
+      await q.query('UPDATE radio_configuration SET version = version + 1, updated_by = $1, updated_at = now() WHERE channel_id = $2', [ctx.actor, channelId]);
       await this.audit.record({ actor: ctx.actor, action: 'radio.rule.delete', entityType: 'radio_rule', entityId: id, before, requestId: ctx.requestId }, q);
     });
-    await this.bus.publish({ type: 'config-changed' });
+    await this.bus.publish({ type: 'config-changed', channelId });
   }
 
   private async mutateRules(
+    channelId: string,
     ctx: ActorContext,
     action: string,
     fn: (q: Queryable) => Promise<{ id: string; before: RadioRuleSnapshot | null }>,
   ): Promise<ConfigView['rules'][number]> {
     const out = await this.db.tx(async (q) => {
-      await this.lockConfig(q);
+      await this.lockConfig(q, channelId);
       const { id, before } = await fn(q);
-      await q.query('UPDATE radio_configuration SET version = version + 1, updated_by = $1, updated_at = now() WHERE id = 1', [ctx.actor]);
-      const after = (await this.repo.getSnapshot(q)).snapshot.rules.find((r) => r.id === id);
+      await q.query('UPDATE radio_configuration SET version = version + 1, updated_by = $1, updated_at = now() WHERE channel_id = $2', [ctx.actor, channelId]);
+      const after = (await this.repo.getSnapshot(channelId, q)).snapshot.rules.find((r) => r.id === id);
       if (!after) throw new NotFoundException('Rule not found');
       await this.audit.record({ actor: ctx.actor, action, entityType: 'radio_rule', entityId: id, before, after, requestId: ctx.requestId }, q);
       return after;
     });
-    await this.bus.publish({ type: 'config-changed' });
+    await this.bus.publish({ type: 'config-changed', channelId });
     return out;
   }
 
@@ -184,8 +185,9 @@ export class RadioConfigurationService {
   }
 
   /** Row lock on the singleton config: concurrent admin writes queue up instead of interleaving. */
-  private async lockConfig(q: Queryable, expectedVersion?: number): Promise<number> {
-    const r = await q.query<{ version: number }>('SELECT version FROM radio_configuration WHERE id = 1 FOR UPDATE');
+  private async lockConfig(q: Queryable, channelId: string, expectedVersion?: number): Promise<number> {
+    const r = await q.query<{ version: number }>('SELECT version FROM radio_configuration WHERE channel_id = $1 FOR UPDATE', [channelId]);
+    if (r.rows.length === 0) throw new NotFoundException('Channel not found');
     const version = r.rows[0]?.version ?? 0;
     if (expectedVersion !== undefined && expectedVersion !== version) {
       throw new ConflictException({ message: 'Radio configuration was changed by someone else', currentVersion: version });
@@ -205,13 +207,13 @@ export class RadioConfigurationService {
 
   // ---- preview (same RadioRuleEngine as the live radio) ----
 
-  async preview(req: PreviewRequest): Promise<{
+  async preview(channelId: string, req: PreviewRequest): Promise<{
     seed: number;
     mode: string;
     eligibleCount: number;
     tracks: { id: string; title: string; artist: string | null; hashtags: string[]; reason: string }[];
   }> {
-    const cur = await this.repo.getSnapshot();
+    const cur = await this.repo.getSnapshot(channelId);
     const draftRules: RadioRuleSnapshot[] | undefined = req.rules?.map((r, i) => ({ id: `draft-${i}`, name: r.name, priority: r.priority, matchMode: r.matchMode, weight: r.weight, enabled: r.enabled, include: r.include, exclude: r.exclude }));
     const snapshot: RadioConfigSnapshot = {
       ...cur.snapshot,
@@ -222,8 +224,8 @@ export class RadioConfigurationService {
       rules: draftRules ?? cur.snapshot.rules,
     };
     const seed = req.seed ?? Math.floor(Math.random() * 2 ** 31);
-    const [candidates, st] = await Promise.all([this.repo.loadCandidates(), this.state.get()]);
-    const recent = await this.history.recentTrackIds(Math.max(snapshot.recentTrackWindow, 1));
+    const [candidates, st] = await Promise.all([this.repo.loadCandidates(channelId), this.state.get(channelId)]);
+    const recent = await this.history.recentTrackIds(channelId, Math.max(snapshot.recentTrackWindow, 1));
     const recentIds = st.currentTrackId ? [st.currentTrackId, ...recent.filter((id) => id !== st.currentTrackId)] : recent;
     const result = this.engine.preview({ config: snapshot, candidates, recentTrackIds: recentIds, rotationCursor: st.rotationCursor }, req.limit, seed);
 

@@ -20,25 +20,26 @@ export class RadioControlService {
     private readonly history: PlaybackHistoryRepository,
   ) {}
 
-  async skip(expectedSeq: number | undefined, ctx: ActorContext): Promise<{ accepted: true; transitionSeq: number }> {
-    const st = await this.state.get();
-    await this.bus.publish({ type: 'skip', ...(expectedSeq !== undefined ? { expectedSeq } : {}) });
-    await this.audit.record({ actor: ctx.actor, action: 'radio.skip', entityType: 'radio', after: { expectedSeq, currentTrackId: st.currentTrackId }, requestId: ctx.requestId });
+  async skip(channelId: string, expectedSeq: number | undefined, ctx: ActorContext): Promise<{ accepted: true; transitionSeq: number }> {
+    const st = await this.state.get(channelId);
+    await this.bus.publish({ type: 'skip', channelId, ...(expectedSeq !== undefined ? { expectedSeq } : {}) });
+    await this.audit.record({ actor: ctx.actor, action: 'radio.skip', entityType: 'radio', entityId: channelId, after: { expectedSeq, currentTrackId: st.currentTrackId }, requestId: ctx.requestId });
     return { accepted: true, transitionSeq: st.transitionSeq };
   }
 
-  async playNext(trackId: string | undefined, ctx: ActorContext): Promise<{ accepted: true }> {
+  async playNext(channelId: string, trackId: string | undefined, ctx: ActorContext): Promise<{ accepted: true }> {
     if (trackId) {
       const t = await this.tracks.findById(trackId);
       if (!t) throw new NotFoundException('Track not found');
+      if (t.telegramChannelId !== channelId) throw new BadRequestException('Track belongs to another channel');
       if (t.status !== 'READY' || !t.enabled) throw new BadRequestException('Track is not playable (disabled, failed or unavailable)');
     }
-    await this.bus.publish({ type: 'play-next', ...(trackId ? { trackId } : {}) });
-    await this.audit.record({ actor: ctx.actor, action: 'radio.play-next', entityType: 'radio', entityId: trackId ?? null, after: { specificTrack: Boolean(trackId) }, requestId: ctx.requestId });
+    await this.bus.publish({ type: 'play-next', channelId, ...(trackId ? { trackId } : {}) });
+    await this.audit.record({ actor: ctx.actor, action: 'radio.play-next', entityType: 'radio', entityId: channelId, after: { specificTrack: Boolean(trackId) }, requestId: ctx.requestId });
     return { accepted: true };
   }
 
-  historyList(limit: number): ReturnType<PlaybackHistoryRepository['list']> {
-    return this.history.list(limit);
+  historyList(channelId: string, limit: number): ReturnType<PlaybackHistoryRepository['list']> {
+    return this.history.list(channelId, limit);
   }
 }

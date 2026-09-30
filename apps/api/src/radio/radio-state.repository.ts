@@ -26,19 +26,21 @@ interface Row {
   transition_seq: string;
 }
 
+/** Per-station playback state. Every method is scoped by the Telegram channel id. */
 @Injectable()
 export class RadioStateRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async get(): Promise<RadioStateRow> {
+  async get(channelId: string): Promise<RadioStateRow> {
     const r = (
       await this.db.query<Row>(
         `SELECT s.status, s.status_reason, s.current_track_id, s.current_history_id, s.started_at, s.next_track_id, s.rotation_cursor,
                 c.version AS configuration_version, s.transition_seq
-           FROM radio_state s, radio_configuration c WHERE s.id = 1 AND c.id = 1`,
+           FROM radio_state s JOIN radio_configuration c ON c.channel_id = s.channel_id WHERE s.channel_id = $1`,
+        [channelId],
       )
     ).rows[0];
-    if (!r) throw new Error('radio_state row missing');
+    if (!r) throw new Error(`radio_state row missing for channel ${channelId}`);
     return {
       status: r.status,
       statusReason: r.status_reason,
@@ -53,31 +55,31 @@ export class RadioStateRepository {
   }
 
   /** Marks a new track as playing and bumps transition_seq (the optimistic token for skip / play-next). */
-  async beginTrack(trackId: string, historyId: string, startedAt: Date): Promise<number> {
+  async beginTrack(channelId: string, trackId: string, historyId: string, startedAt: Date): Promise<number> {
     const r = await this.db.query<{ transition_seq: string }>(
-      `UPDATE radio_state SET status = 'PLAYING', status_reason = NULL, current_track_id = $1, current_history_id = $2, started_at = $3,
-              transition_seq = transition_seq + 1, updated_at = now() WHERE id = 1 RETURNING transition_seq`,
-      [trackId, historyId, startedAt],
+      `UPDATE radio_state SET status = 'PLAYING', status_reason = NULL, current_track_id = $2, current_history_id = $3, started_at = $4,
+              transition_seq = transition_seq + 1, updated_at = now() WHERE channel_id = $1 RETURNING transition_seq`,
+      [channelId, trackId, historyId, startedAt],
     );
     return Number(r.rows[0]?.transition_seq ?? 0);
   }
 
-  async setStatus(status: RadioStatus, reason: string | null): Promise<void> {
+  async setStatus(channelId: string, status: RadioStatus, reason: string | null): Promise<void> {
     await this.db.query(
-      `UPDATE radio_state SET status = $1, status_reason = $2,
-              current_track_id = CASE WHEN $1 = 'PLAYING' THEN current_track_id ELSE NULL END,
-              current_history_id = CASE WHEN $1 = 'PLAYING' THEN current_history_id ELSE NULL END,
-              started_at = CASE WHEN $1 = 'PLAYING' THEN started_at ELSE NULL END,
-              next_track_id = CASE WHEN $1 = 'PLAYING' THEN next_track_id ELSE NULL END, updated_at = now() WHERE id = 1`,
-      [status, reason],
+      `UPDATE radio_state SET status = $2, status_reason = $3,
+              current_track_id = CASE WHEN $2 = 'PLAYING' THEN current_track_id ELSE NULL END,
+              current_history_id = CASE WHEN $2 = 'PLAYING' THEN current_history_id ELSE NULL END,
+              started_at = CASE WHEN $2 = 'PLAYING' THEN started_at ELSE NULL END,
+              next_track_id = CASE WHEN $2 = 'PLAYING' THEN next_track_id ELSE NULL END, updated_at = now() WHERE channel_id = $1`,
+      [channelId, status, reason],
     );
   }
 
-  async setNext(trackId: string | null): Promise<void> {
-    await this.db.query('UPDATE radio_state SET next_track_id = $1, updated_at = now() WHERE id = 1', [trackId]);
+  async setNext(channelId: string, trackId: string | null): Promise<void> {
+    await this.db.query('UPDATE radio_state SET next_track_id = $2, updated_at = now() WHERE channel_id = $1', [channelId, trackId]);
   }
 
-  async setRotationCursor(cursor: number): Promise<void> {
-    await this.db.query('UPDATE radio_state SET rotation_cursor = $1 WHERE id = 1', [cursor]);
+  async setRotationCursor(channelId: string, cursor: number): Promise<void> {
+    await this.db.query('UPDATE radio_state SET rotation_cursor = $2 WHERE channel_id = $1', [channelId, cursor]);
   }
 }

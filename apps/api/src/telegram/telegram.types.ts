@@ -30,19 +30,26 @@ export interface FetchAudioOptions {
   limit?: number;
 }
 
+/** Maps a station's Telegram channel id to the reference (@username / link) needed to resolve it after a restart. */
+export interface ChannelDirectory {
+  referenceOf(channelId: string): Promise<string | null>;
+}
+
 /**
  * Everything the app needs from Telegram, behind an interface so discovery/streaming are testable
  * without a network. The real implementation uses MTProto (GramJS), never the Bot API.
+ * All calls are scoped by the Telegram channel id (one radio station per channel).
  */
 export interface TelegramGateway {
-  resolveChannel(): Promise<TelegramChannelInfo>;
-  /** Audio messages, newest first. */
-  fetchAudioMessages(opts?: FetchAudioOptions): AsyncIterable<TelegramAudioMessage>;
-  getAudioMessage(messageId: number): Promise<TelegramAudioMessage | null>;
+  /** Resolves what an admin typed (@username, t.me link, numeric id) to a channel. */
+  resolveChannel(reference: string): Promise<TelegramChannelInfo>;
+  /** Audio messages of the channel, newest first. */
+  fetchAudioMessages(channelId: string, opts?: FetchAudioOptions): AsyncIterable<TelegramAudioMessage>;
+  getAudioMessage(channelId: string, messageId: number): Promise<TelegramAudioMessage | null>;
   /** Returns the subset of `messageIds` that still exist as audio messages. */
-  existingAudioMessageIds(messageIds: readonly number[]): Promise<Set<number>>;
+  existingAudioMessageIds(channelId: string, messageIds: readonly number[]): Promise<Set<number>>;
   /** Streams the file in chunks from `offset`. Aborts promptly when `signal` fires. */
-  download(messageId: number, opts?: { offset?: number; signal?: AbortSignal }): AsyncIterable<Uint8Array>;
+  download(channelId: string, messageId: number, opts?: { offset?: number; signal?: AbortSignal }): AsyncIterable<Uint8Array>;
 }
 
 export const TELEGRAM_GATEWAY = Symbol('TELEGRAM_GATEWAY');

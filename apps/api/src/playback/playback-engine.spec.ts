@@ -53,7 +53,7 @@ describe('PlaybackEngine', () => {
 
   it('plays random tracks continuously, never repeating immediately, and records history', async () => {
     for (const i of [1, 2, 3, 4]) addTrack(gw, i);
-    await discovery.sync();
+    await discovery.sync('1001');
     const l = listen();
     h.engine.start();
     await waitFor(async () => (await plays()) >= 8);
@@ -70,7 +70,7 @@ describe('PlaybackEngine', () => {
 
   it('transitions are gapless: listener bytes are exactly the tracks back to back', async () => {
     for (const i of [1, 2, 3]) addTrack(gw, i);
-    await discovery.sync();
+    await discovery.sync('1001');
     const l = listen();
     h.engine.start();
     await waitFor(async () => (await plays()) >= 4);
@@ -87,7 +87,7 @@ describe('PlaybackEngine', () => {
 
   it('serves many listeners from ONE Telegram download per play; disconnects free resources', async () => {
     for (const i of [1, 2]) addTrack(gw, i);
-    await discovery.sync();
+    await discovery.sync('1001');
     const a = listen();
     const b = listen();
     const c = listen();
@@ -105,7 +105,7 @@ describe('PlaybackEngine', () => {
   it('a late listener gets the buffered tail immediately (low join latency)', async () => {
     addTrack(gw, 1);
     addTrack(gw, 2);
-    await discovery.sync();
+    await discovery.sync('1001');
     h.engine.start();
     await waitFor(async () => (await plays()) >= 2);
     const late = listen();
@@ -117,7 +117,7 @@ describe('PlaybackEngine', () => {
     addTrack(gw, 1);
     addTrack(gw, 2);
     gw.failDownloadFor.add(2);
-    await discovery.sync();
+    await discovery.sync('1001');
     const l = listen();
     h.engine.start();
     await waitFor(async () => (await plays()) >= 5);
@@ -131,7 +131,7 @@ describe('PlaybackEngine', () => {
   it('resumes a broken download from the last byte instead of skipping the track', async () => {
     gw.add(audioMsg(1, 'A - One', { size: 20000, duration: 1 }), [Buffer.alloc(10000, 1), Buffer.alloc(10000, 1)]);
     gw.flakyAfterChunks.set(1, 1);
-    await discovery.sync();
+    await discovery.sync('1001');
     const l = listen();
     h.engine.start();
     await waitFor(async () => Buffer.concat(l.chunks).length >= 20000);
@@ -142,18 +142,18 @@ describe('PlaybackEngine', () => {
 
   it('empty library: IDLE with a reason (no busy loop); starts once a track appears', async () => {
     h.engine.start();
-    await waitFor(async () => (await h.state.get()).statusReason === 'NO_PLAYABLE_TRACKS');
-    expect((await h.state.get()).statusReason).toBe('NO_PLAYABLE_TRACKS');
+    await waitFor(async () => (await h.state.get('1001')).statusReason === 'NO_PLAYABLE_TRACKS');
+    expect((await h.state.get('1001')).statusReason).toBe('NO_PLAYABLE_TRACKS');
     addTrack(gw, 1);
-    await discovery.sync();
+    await discovery.sync('1001');
     h.engine.wake();
-    await waitFor(async () => (await h.state.get()).status === 'PLAYING');
-    expect((await h.state.get()).currentTrackId).not.toBeNull();
+    await waitFor(async () => (await h.state.get('1001')).status === 'PLAYING');
+    expect((await h.state.get('1001')).currentTrackId).not.toBeNull();
   });
 
   it('skip is idempotent, stale tokens are ignored, and it triggers exactly one transition', async () => {
     for (const i of [1, 2, 3]) addTrack(gw, i);
-    await discovery.sync();
+    await discovery.sync('1001');
     // Block pacing so the first track stays "playing" until we act.
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
@@ -177,7 +177,7 @@ describe('PlaybackEngine', () => {
 
   it('playNext(trackId) plays exactly that track next', async () => {
     for (const i of [1, 2, 3]) addTrack(gw, i);
-    await discovery.sync();
+    await discovery.sync('1001');
     const target = (await db.query<{ id: string }>(`SELECT id FROM tracks WHERE telegram_message_id = 3`)).rows[0]?.id ?? '';
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
@@ -196,23 +196,23 @@ describe('PlaybackEngine', () => {
   it('Telegram outage does NOT mark tracks FAILED: status ERROR, recovers when Telegram is back', async () => {
     addTrack(gw, 1);
     addTrack(gw, 2);
-    await discovery.sync();
+    await discovery.sync('1001');
     gw.notReady = true;
     h.engine.start();
-    await waitFor(async () => (await h.state.get()).status === 'ERROR');
+    await waitFor(async () => (await h.state.get('1001')).status === 'ERROR');
     await new Promise((r) => setTimeout(r, 150));
     const rows = (await db.query<{ status: string; consecutive_failures: number }>(`SELECT status, consecutive_failures FROM tracks`)).rows;
     expect(rows.every((r) => r.status === 'READY' && r.consecutive_failures === 0)).toBe(true);
     gw.notReady = false;
     h.engine.wake();
-    await waitFor(async () => (await h.state.get()).status === 'PLAYING', 12000);
+    await waitFor(async () => (await h.state.get('1001')).status === 'PLAYING', 12000);
   });
 
   it('radio disabled -> STOPPED', async () => {
     addTrack(gw, 1);
-    await discovery.sync();
+    await discovery.sync('1001');
     await db.query('UPDATE radio_configuration SET enabled = false');
     h.engine.start();
-    await waitFor(async () => (await h.state.get()).status === 'STOPPED');
+    await waitFor(async () => (await h.state.get('1001')).status === 'STOPPED');
   });
 });

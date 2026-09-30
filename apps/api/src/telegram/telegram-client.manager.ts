@@ -2,12 +2,14 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } f
 import { Api, TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
+import { SettingsService, TelegramCredentials } from '../settings/settings.service';
 import { withTimeout } from '../common/timeout';
 import { withFloodWait } from './flood-wait';
 import { maskPhone, TelegramSessionStore } from './telegram-session.store';
 import { TelegramNotReadyError } from './telegram.types';
 
 export type TelegramAuthState =
+  | 'NOT_CONFIGURED'
   | 'NOT_LOGGED_IN'
   | 'CONNECTING'
   | 'AWAITING_CODE'
@@ -24,6 +26,7 @@ export interface TelegramStatus {
 
 interface PendingLogin {
   client: TelegramClient;
+  creds: TelegramCredentials;
   phone: string;
   phoneCodeHash: string;
   actor: string;
@@ -38,7 +41,8 @@ const LOGIN_STEP_TIMEOUT_MS = 30_000;
 export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(TelegramClientManager.name);
   private client: TelegramClient | null = null;
-  private state: TelegramAuthState = 'NOT_LOGGED_IN';
+  private state: TelegramAuthState = 'NOT_CONFIGURED';
+  private unsubscribeSettings: (() => void) | null = null;
   private lastError: string | undefined;
   private accountLabel: string | null = null;
   private pending: PendingLogin | null = null;
@@ -46,8 +50,9 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
   private starting: Promise<void> | null = null;
 
   constructor(
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, 'TELEGRAM_SESSION'>,
     private readonly store: TelegramSessionStore,
+    private readonly settings: Pick<SettingsService, 'telegram' | 'onChange'>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -55,9 +60,21 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
     void this.start().catch((err: unknown) => this.logger.error({ msg: 'telegram start failed', err: this.safeError(err) }));
     this.supervisor = setInterval(() => void this.supervise(), 30_000);
     this.supervisor.unref();
+    // API id/hash edited in the panel: reconnect with the new credentials.
+    this.unsubscribeSettings = this.settings.onChange((section) => {
+      if (section === 'telegram') void this.restart().catch((err: unknown) => this.logger.error({ msg: 'telegram restart failed', err: this.safeError(err) }));
+    });
+  }
+
+  async restart(): Promise<void> {
+    await this.cancelLogin();
+    await this.disconnect();
+    this.state = 'NOT_CONFIGURED';
+    await this.start();
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.unsubscribeSettings?.();
     if (this.supervisor) clearInterval(this.supervisor);
     await this.disconnect();
   }
@@ -84,6 +101,12 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
   }
 
   private async doStart(): Promise<void> {
+    const creds = await this.settings.telegram();
+    if (!creds) {
+      this.state = 'NOT_CONFIGURED';
+      this.logger.warn({ msg: 'telegram API id/hash not set; configure them in the admin panel' });
+      return;
+    }
     let session = await this.store.load();
     if (!session && this.config.TELEGRAM_SESSION) {
       session = this.config.TELEGRAM_SESSION;
@@ -96,7 +119,7 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
       return;
     }
     this.state = 'CONNECTING';
-    const client = this.newClient(session);
+    const client = this.newClient(session, creds);
     try {
       await client.connect();
       if (!(await client.checkAuthorization())) {
@@ -119,8 +142,8 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
     }
   }
 
-  private newClient(session: string): TelegramClient {
-    return new TelegramClient(new StringSession(session), this.config.TELEGRAM_API_ID, this.config.TELEGRAM_API_HASH, {
+  private newClient(session: string, creds: TelegramCredentials): TelegramClient {
+    return new TelegramClient(new StringSession(session), creds.apiId, creds.apiHash, {
       connectionRetries: 10,
       autoReconnect: true,
       floodSleepThreshold: 20,
@@ -147,15 +170,17 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
 
   async beginLogin(phone: string, actor: string): Promise<void> {
     await this.cancelLogin();
-    const client = this.newClient('');
+    const creds = await this.settings.telegram();
+    if (!creds) throw new TelegramNotReadyError('Set the Telegram API ID and API hash first (Settings page)');
+    const client = this.newClient('', creds);
     try {
       await withTimeout(client.connect(), LOGIN_STEP_TIMEOUT_MS, 'Connecting to Telegram');
       const { phoneCodeHash } = await withTimeout(
-        withFloodWait('sendCode', () => client.sendCode({ apiId: this.config.TELEGRAM_API_ID, apiHash: this.config.TELEGRAM_API_HASH }, phone)),
+        withFloodWait('sendCode', () => client.sendCode({ apiId: creds.apiId, apiHash: creds.apiHash }, phone)),
         LOGIN_STEP_TIMEOUT_MS,
         'Requesting the login code',
       );
-      this.pending = { client, phone, phoneCodeHash, actor, expiresAt: Date.now() + LOGIN_TTL_MS };
+      this.pending = { client, creds, phone, phoneCodeHash, actor, expiresAt: Date.now() + LOGIN_TTL_MS };
       this.state = 'AWAITING_CODE';
       this.logger.log({ msg: 'telegram login code requested', phone: maskPhone(phone), actor });
     } catch (err) {
@@ -185,7 +210,7 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
     let inner: unknown;
     try {
       await p.client.signInWithPassword(
-        { apiId: this.config.TELEGRAM_API_ID, apiHash: this.config.TELEGRAM_API_HASH },
+        { apiId: p.creds.apiId, apiHash: p.creds.apiHash },
         {
           password: async () => password,
           onError: async (e: Error) => {

@@ -1,12 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { DatabaseService, LOCKS } from '../database/database.service';
-import { RadioBus } from '../radio/radio-bus';
-import { PlaybackEngine } from './playback-engine';
+import { RadioBus, RadioCommand } from '../radio/radio-bus';
 import { PlaybackHistoryRepository } from './playback-history.repository';
+import { StationManager } from './station-manager';
 
 /**
- * Leader election: only the instance holding the Postgres advisory lock runs the PlaybackEngine, so two
- * workers can never select/play at the same time. If the lock connection dies, the engine stops and we re-elect.
+ * Leader election: only the instance holding the Postgres advisory lock runs the stations, so two workers can never
+ * select/play the same channel at once. If the lock connection dies, all stations stop and we re-elect.
  */
 export class PlaybackSupervisor {
   private readonly logger = new Logger(PlaybackSupervisor.name);
@@ -18,7 +18,7 @@ export class PlaybackSupervisor {
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly engine: PlaybackEngine,
+    private readonly stations: StationManager,
     private readonly bus: RadioBus,
     private readonly history: PlaybackHistoryRepository,
     private readonly retryMs = 5000,
@@ -56,7 +56,7 @@ export class PlaybackSupervisor {
       if (closed > 0) this.logger.warn({ msg: 'closed dangling playback rows', count: closed });
       await this.onBecomeLeader?.();
       this.unsubscribe = await this.bus.subscribe((cmd) => this.handle(cmd));
-      this.engine.start();
+      await this.stations.reconcile();
     } catch (err) {
       this.logger.error({ msg: 'leader election failed', err: err instanceof Error ? err.message : String(err) });
       await this.demote('election-error');
@@ -65,19 +65,28 @@ export class PlaybackSupervisor {
     }
   }
 
-  private handle(cmd: Parameters<Parameters<RadioBus['subscribe']>[0]>[0]): void {
+  private handle(cmd: RadioCommand): void {
+    if (cmd.type === 'stations-changed') {
+      void this.stations.reconcile();
+      return;
+    }
+    const station = this.stations.get(cmd.channelId);
+    if (!station) {
+      this.logger.warn({ msg: 'command for a station that is not running', type: cmd.type, channelId: cmd.channelId });
+      return;
+    }
     switch (cmd.type) {
       case 'skip':
-        this.logger.log({ msg: 'command: skip', result: this.engine.skip(cmd.expectedSeq) });
+        this.logger.log({ msg: 'command: skip', channelId: cmd.channelId, result: station.engine.skip(cmd.expectedSeq) });
         break;
       case 'play-next':
-        this.logger.log({ msg: 'command: play-next', result: this.engine.playNext(cmd.trackId) });
+        this.logger.log({ msg: 'command: play-next', channelId: cmd.channelId, result: station.engine.playNext(cmd.trackId) });
         break;
       case 'config-changed':
-        this.engine.invalidatePlan();
+        station.engine.invalidatePlan();
         break;
       case 'wake':
-        this.engine.wake();
+        station.engine.wake();
         break;
     }
   }
@@ -89,7 +98,7 @@ export class PlaybackSupervisor {
     this.logger.warn({ msg: 'stepping down as playback leader', why });
     await this.unsubscribe?.().catch((e: unknown) => this.logger.warn({ msg: 'unsubscribe failed', err: String(e) }));
     this.unsubscribe = null;
-    await this.engine.stop();
+    await this.stations.stopAll();
     await release();
   }
 }

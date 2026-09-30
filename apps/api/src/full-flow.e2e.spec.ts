@@ -11,6 +11,7 @@ import { InlineQueue } from '../test/inline-queue';
 import { createRadioApp } from '../test/radio-app';
 import { freshDb } from '../test/test-db';
 import { LyricsAlignmentService } from './alignment/lyrics-alignment.service';
+import { LexiconRepository } from './language/lexicon';
 import { DatabaseService } from './database/database.service';
 import { LyricsPipeline } from './jobs/lyrics-pipeline';
 import { LyricsError } from './lyrics/lyrics.errors';
@@ -73,8 +74,8 @@ describe('FULL FLOW: Telegram -> lyrics AI -> radio -> stream -> live lyrics -> 
     const pipeline = new LyricsPipeline(
       queue,
       new LyricsService(telegraph, lyricsRepo, tracks, 3600),
-      new TrackTranscriptionService(whisper, { provider: 'fake', model: 'fake-1' }, gw, prepare, tracks, lyricsRepo, mkdtempSync(join(tmpdir(), 'ff-'))),
-      new LyricsAlignmentService(lyricsRepo),
+      new TrackTranscriptionService({ current: async () => ({ provider: whisper, identity: { provider: 'fake', model: 'fake-1' }, language: undefined, sampleRate: 48000 }) }, gw, prepare, tracks, lyricsRepo, mkdtempSync(join(tmpdir(), 'ff-'))),
+      new LyricsAlignmentService(lyricsRepo, new LexiconRepository(db), tracks),
       tracks,
     );
     queue.pipeline = pipeline;
@@ -83,7 +84,7 @@ describe('FULL FLOW: Telegram -> lyrics AI -> radio -> stream -> live lyrics -> 
       gw.add(audioMsg(Number(id), `Artist ${id} - Song ${id}\n\nAlbum: Album\n\nLyrics:\nhttps://telegra.ph/song-${id}\n#rain #night`, { size: 40000, duration: 2 }), [Buffer.alloc(40000, Number(id))]);
     }
     const discovery = new TelegramTrackDiscovery(gw, tracks, { onLyricsNeedFetch: (tid) => pipeline.start(tid) });
-    await discovery.sync();
+    await discovery.sync('1001');
     h = buildHarness(db, gw, {
       burstSeconds: 0.5,
       now: Date.now,

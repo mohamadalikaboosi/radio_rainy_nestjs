@@ -63,7 +63,7 @@ export class TrackAdminService {
   async refreshMetadata(id: string, ctx: ActorContext): Promise<{ outcome: string }> {
     const track = await this.tracks.findById(id);
     if (!track) throw new NotFoundException('Track not found');
-    const res = await this.discovery.refreshMessage(track.telegramMessageId);
+    const res = await this.discovery.refreshMessage(track.telegramChannelId, track.telegramMessageId);
     if (!res) {
       await this.db.query(`UPDATE tracks SET status = 'UNAVAILABLE', deleted_at = now(), updated_at = now() WHERE id = $1`, [id]);
     }

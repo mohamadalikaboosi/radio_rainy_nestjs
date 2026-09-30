@@ -6,15 +6,19 @@ import { LyricsRepository } from '../lyrics/lyrics.repository';
 import { PlaybackHistoryRepository } from '../playback/playback-history.repository';
 import { RADIO_BUS, RadioBus } from '../radio/radio-bus';
 import { RadioConfigRepository } from '../radio/radio-config.repository';
+import { ChannelRepository } from '../channels/channel.repository';
+import { ChannelService } from '../channels/channel.service';
+import { StationManager } from '../playback/station-manager';
+import { TELEGRAM_GATEWAY, TelegramGateway } from '../telegram/telegram.types';
 import { RadioConfigurationService } from '../radio/radio-configuration.service';
 import { RadioStateRepository } from '../radio/radio-state.repository';
-import { Broadcaster } from '../streaming/broadcaster';
 import { TelegramClientManager } from '../telegram/telegram-client.manager';
 import { TelegramTrackDiscovery } from '../telegram/track-discovery';
 import { TrackRepository } from '../track/track.repository';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminGuard } from './admin.guard';
-import { AdminAuthController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
+import { AdminAuthController, AdminChannelsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
+import { AdminLanguageController, AdminSettingsController } from './settings-language.controllers';
 import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
 import { RadioControlService } from './radio-control.service';
@@ -33,7 +37,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
 }
 
 @Module({
-  controllers: [AdminAuthController, AdminDashboardController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController],
+  controllers: [AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
     { provide: AdminAuthService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new AdminAuthService({ adminEmail: c.ADMIN_EMAIL, passwordHash: c.ADMIN_PASSWORD_HASH, jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
@@ -58,8 +62,13 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     },
     {
       provide: DashboardService,
-      inject: [DatabaseService, RadioStateRepository, RadioConfigRepository, TrackRepository, PlaybackHistoryRepository, Broadcaster, TelegramClientManager],
-      useFactory: (db: DatabaseService, s: RadioStateRepository, c: RadioConfigRepository, t: TrackRepository, h: PlaybackHistoryRepository, b: Broadcaster, tg: TelegramClientManager) => new DashboardService(db, s, c, t, h, b, tg),
+      inject: [DatabaseService, RadioStateRepository, RadioConfigRepository, TrackRepository, PlaybackHistoryRepository, StationManager, ChannelRepository, TelegramClientManager],
+      useFactory: (db: DatabaseService, s: RadioStateRepository, c: RadioConfigRepository, t: TrackRepository, h: PlaybackHistoryRepository, sm: StationManager, ch: ChannelRepository, tg: TelegramClientManager) => new DashboardService(db, s, c, t, h, sm, ch, tg),
+    },
+    {
+      provide: ChannelService,
+      inject: [ChannelRepository, TELEGRAM_GATEWAY, RADIO_BUS, AuditService, APP_CONFIG],
+      useFactory: (ch: ChannelRepository, gw: TelegramGateway, bus: RadioBus, a: AuditService, c: AppConfig) => new ChannelService(ch, gw, bus, a, c.RADIO_RECENT_TRACK_WINDOW),
     },
   ],
 })

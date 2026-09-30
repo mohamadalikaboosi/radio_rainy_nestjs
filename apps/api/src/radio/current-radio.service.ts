@@ -42,8 +42,7 @@ const LYRICS_CACHE_MAX = 64;
 /** Read model behind the public radio API: cached briefly so thousands of pollers don't hammer the DB. */
 @Injectable()
 export class CurrentRadioService {
-  private snapshot: Promise<Snapshot> | null = null;
-  private snapshotAt = 0;
+  private readonly snapshots = new Map<string, { at: number; value: Promise<Snapshot> }>();
   private readonly lyricsCache = new Map<string, { at: number; view: LyricsView }>();
 
   constructor(
@@ -53,24 +52,22 @@ export class CurrentRadioService {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  private load(): Promise<Snapshot> {
+  private load(channelId: string): Promise<Snapshot> {
     const t = this.now();
-    if (!this.snapshot || t - this.snapshotAt > STATE_TTL_MS) {
-      this.snapshotAt = t;
-      this.snapshot = (async () => {
-        const state = await this.state.get();
-        const track = state.status === 'PLAYING' && state.currentTrackId ? await this.tracks.findById(state.currentTrackId) : null;
-        return { at: t, state, track };
-      })();
-      this.snapshot.catch(() => {
-        this.snapshot = null;
-      });
-    }
-    return this.snapshot;
+    const hit = this.snapshots.get(channelId);
+    if (hit && t - hit.at <= STATE_TTL_MS) return hit.value;
+    const value = (async () => {
+      const state = await this.state.get(channelId);
+      const track = state.status === 'PLAYING' && state.currentTrackId ? await this.tracks.findById(state.currentTrackId) : null;
+      return { at: t, state, track };
+    })();
+    this.snapshots.set(channelId, { at: t, value });
+    value.catch(() => this.snapshots.delete(channelId));
+    return value;
   }
 
-  async current(): Promise<CurrentView> {
-    const { state, track } = await this.load();
+  async current(channelId: string): Promise<CurrentView> {
+    const { state, track } = await this.load(channelId);
     const serverTime = new Date(this.now()).toISOString();
     if (state.status !== 'PLAYING' || !track || !state.startedAt) return { status: state.status, serverTime };
     return {
@@ -86,14 +83,14 @@ export class CurrentRadioService {
     };
   }
 
-  async currentLyrics(): Promise<LyricsView | null> {
-    const { state, track } = await this.load();
+  async currentLyrics(channelId: string): Promise<LyricsView | null> {
+    const { state, track } = await this.load(channelId);
     if (state.status !== 'PLAYING' || !track) return null;
     return this.lyricsFor(track);
   }
 
-  async activeLine(): Promise<{ status: PublicLyricsStatus; trackId: string; position: number; active: ActiveLine | null } | null> {
-    const { state, track } = await this.load();
+  async activeLine(channelId: string): Promise<{ status: PublicLyricsStatus; trackId: string; position: number; active: ActiveLine | null } | null> {
+    const { state, track } = await this.load(channelId);
     if (state.status !== 'PLAYING' || !track || !state.startedAt) return null;
     const view = await this.lyricsFor(track);
     const position = round1(computePosition(state.startedAt, this.now(), track.duration));

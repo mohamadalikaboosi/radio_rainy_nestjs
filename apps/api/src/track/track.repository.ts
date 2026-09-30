@@ -214,4 +214,13 @@ export class TrackRepository {
       [trackId, maxFailures],
     );
   }
+
+  async setLyricsLanguage(trackId: string, lang: string): Promise<void> {
+    await this.db.query('UPDATE tracks SET lyrics_language = $2 WHERE id = $1 AND lyrics_language IS DISTINCT FROM $2', [trackId, lang]);
+  }
+
+  async getLyricsLanguage(trackId: string): Promise<'fa' | 'en' | 'mixed' | 'unknown' | null> {
+    const r = await this.db.query<{ lyrics_language: 'fa' | 'en' | 'mixed' | 'unknown' | null }>('SELECT lyrics_language FROM tracks WHERE id = $1', [trackId]);
+    return r.rows[0]?.lyrics_language ?? null;
+  }
 }

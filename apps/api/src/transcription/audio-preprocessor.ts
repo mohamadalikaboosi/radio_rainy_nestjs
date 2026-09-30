@@ -1,17 +1,22 @@
 import { spawn } from 'node:child_process';
 import { TranscriptionError } from './transcription.errors';
 
+export interface PreprocessOptions {
+  /** Sample rate of the audio handed to Whisper (default 48 kHz, configurable in the panel). */
+  sampleRate: number;
+}
+
 export interface AudioPreprocessor {
-  /** Converts any input audio to 16 kHz mono (Whisper's native format). */
-  toWhisperInput(inputPath: string, outputPath: string, signal?: AbortSignal): Promise<void>;
+  /** Converts any input audio to mono FLAC at `sampleRate`. */
+  toWhisperInput(inputPath: string, outputPath: string, opts: PreprocessOptions, signal?: AbortSignal): Promise<void>;
 }
 
 export class FfmpegPreprocessor implements AudioPreprocessor {
   constructor(private readonly ffmpegPath = 'ffmpeg') {}
 
-  toWhisperInput(inputPath: string, outputPath: string, signal?: AbortSignal): Promise<void> {
+  toWhisperInput(inputPath: string, outputPath: string, opts: PreprocessOptions, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.ffmpegPath, ['-nostdin', '-y', '-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'flac', outputPath], {
+      const proc = spawn(this.ffmpegPath, ['-nostdin', '-y', '-i', inputPath, '-vn', '-ac', '1', '-ar', String(opts.sampleRate), '-c:a', 'flac', outputPath], {
         stdio: ['ignore', 'ignore', 'pipe'],
         signal,
       });

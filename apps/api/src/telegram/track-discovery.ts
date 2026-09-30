@@ -33,7 +33,8 @@ const EXISTS_BATCH = 100;
 @Injectable()
 export class TelegramTrackDiscovery {
   private readonly logger = new Logger(TelegramTrackDiscovery.name);
-  private running: Promise<SyncReport> | null = null;
+  /** One run at a time per channel; concurrent callers share it. */
+  private readonly running = new Map<string, Promise<SyncReport>>();
 
   constructor(
     private readonly gateway: TelegramGateway,
@@ -41,18 +42,20 @@ export class TelegramTrackDiscovery {
     private readonly listener?: DiscoveryListener,
   ) {}
 
-  /** Concurrent callers share one run (no double-scan). */
-  sync(options: SyncOptions = {}): Promise<SyncReport> {
-    this.running ??= this.doSync(options).finally(() => {
-      this.running = null;
-    });
-    return this.running;
+  /** Concurrent callers for the same channel share one run (no double-scan). */
+  sync(channelId: string, options: SyncOptions = {}): Promise<SyncReport> {
+    let run = this.running.get(channelId);
+    if (!run) {
+      run = this.doSync(channelId, options).finally(() => this.running.delete(channelId));
+      this.running.set(channelId, run);
+    }
+    return run;
   }
 
-  private async doSync(options: SyncOptions): Promise<SyncReport> {
+  private async doSync(channelId: string, options: SyncOptions): Promise<SyncReport> {
     const started = Date.now();
     const full = options.full === true;
-    const channel = await this.gateway.resolveChannel();
+    const channel = { id: channelId };
     const state = await this.tracks.getSyncState(channel.id);
     const report: SyncReport = {
       channelId: channel.id,
@@ -69,7 +72,7 @@ export class TelegramTrackDiscovery {
     this.logger.log({ msg: 'telegram sync started', channelId: channel.id, full, sinceMessageId: full ? 0 : state.lastMessageId });
 
     let maxId = state.lastMessageId;
-    for await (const msg of this.gateway.fetchAudioMessages({ minId: full ? 0 : state.lastMessageId })) {
+    for await (const msg of this.gateway.fetchAudioMessages(channel.id, { minId: full ? 0 : state.lastMessageId })) {
       if (options.signal?.aborted) throw new Error('sync aborted');
       report.scanned++;
       maxId = Math.max(maxId, msg.messageId);
@@ -85,8 +88,8 @@ export class TelegramTrackDiscovery {
   }
 
   /** Re-reads a single message from Telegram (admin "refresh metadata"). Returns null if it no longer exists. */
-  async refreshMessage(messageId: number): Promise<{ outcome: string } | null> {
-    const msg = await this.gateway.getAudioMessage(messageId);
+  async refreshMessage(channelId: string, messageId: number): Promise<{ outcome: string } | null> {
+    const msg = await this.gateway.getAudioMessage(channelId, messageId);
     if (!msg) return null;
     const report: SyncReport = { channelId: msg.channelId, full: false, scanned: 1, created: 0, updated: 0, unchanged: 0, restored: 0, failed: 0, markedUnavailable: 0, durationMs: 0 };
     await this.processMessage(msg, report);
@@ -119,7 +122,7 @@ export class TelegramTrackDiscovery {
     let marked = 0;
     for (let i = 0; i < known.length; i += EXISTS_BATCH) {
       const batch = known.slice(i, i + EXISTS_BATCH).map((k) => k.messageId);
-      const existing = await this.gateway.existingAudioMessageIds(batch);
+      const existing = await this.gateway.existingAudioMessageIds(channelId, batch);
       const missing = batch.filter((id) => !existing.has(id));
       if (missing.length > 0) {
         marked += await this.tracks.markUnavailable(channelId, missing);

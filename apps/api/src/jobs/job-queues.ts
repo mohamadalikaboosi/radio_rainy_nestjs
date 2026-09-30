@@ -16,6 +16,8 @@ export interface LyricsJobPayload {
 }
 
 export interface SyncJobPayload {
+  /** Telegram channel id; omitted = every channel. */
+  channelId?: string;
   full?: boolean;
 }
 
