@@ -1,0 +1,141 @@
+const TOKEN_KEY = 'rr_admin_token';
+
+/** localStorage can throw (private mode / blocked): the app must still work for the session. */
+let memoryToken: string | null = null;
+export const authStore = {
+  get(): string | null {
+    try {
+      return localStorage.getItem(TOKEN_KEY) ?? memoryToken;
+    } catch {
+      return memoryToken;
+    }
+  },
+  set(token: string): void {
+    memoryToken = token;
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+    } catch {
+      /* memory fallback already set */
+    }
+  },
+  clear(): void {
+    memoryToken = null;
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* nothing to clear */
+    }
+  },
+};
+
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string, public readonly body: unknown) {
+    super(message);
+  }
+}
+
+export const UNAUTHORIZED_EVENT = 'rr:unauthorized';
+
+type Query = Record<string, string | number | boolean | undefined | null>;
+
+export interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  query?: Query;
+}
+
+export async function api<T>(path: string, opt: RequestOptions = {}): Promise<T> {
+  const url = new URL(path, window.location.origin);
+  for (const [k, v] of Object.entries(opt.query ?? {})) if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+  const token = authStore.get();
+  const res = await fetch(url.pathname + url.search, {
+    method: opt.method ?? 'GET',
+    headers: { ...(opt.body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: opt.body !== undefined ? JSON.stringify(opt.body) : undefined,
+  });
+  if (res.status === 204) return undefined as T;
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    if (res.status === 401 && path !== '/admin/auth/login') {
+      authStore.clear();
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
+    const msg = typeof data === 'object' && data !== null && 'message' in data ? String((data as { message: unknown }).message) : `HTTP ${res.status}`;
+    throw new ApiError(res.status, msg, data);
+  }
+  return data as T;
+}
+
+// ---- types (mirrors the backend responses) ----
+export type RadioMode = 'GLOBAL_RANDOM' | 'HASHTAG_RANDOM' | 'HASHTAG_ROTATION' | 'CUSTOM_RULE';
+export type LyricsStatus = 'LYRICS_NONE' | 'LYRICS_PENDING' | 'LYRICS_PROCESSING' | 'LYRICS_READY' | 'LYRICS_FAILED';
+
+export interface TrackItem {
+  id: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  duration: number | null;
+  hashtags: string[];
+  lyricsStatus: LyricsStatus;
+  enabled: boolean;
+  status: string;
+  playCount: number;
+  lastPlayedAt: string | null;
+  telegramMessageId: number;
+  telegramPostUrl: string | null;
+  lyricsUrl: string | null;
+}
+export interface Paged<T> {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: T[];
+}
+export interface HashtagStat {
+  hashtagId: string;
+  value: string;
+  normalized: string;
+  trackCount: number;
+  playableCount: number;
+  failedLyricsCount: number;
+  plays: number;
+  lastPlayedAt: string | null;
+  createdAt: string;
+}
+export interface RuleView {
+  id: string;
+  name: string;
+  priority: number;
+  matchMode: 'ANY' | 'ALL';
+  weight: number;
+  enabled: boolean;
+  include: string[];
+  exclude: string[];
+}
+export interface ConfigView {
+  version: number;
+  mode: RadioMode;
+  hashtagMatchMode: 'ANY' | 'ALL';
+  recentTrackWindow: number;
+  fallbackToGlobal: boolean;
+  enabled: boolean;
+  hashtags: { hashtag: string; weight: number }[];
+  rules: RuleView[];
+}
+export interface PreviewResult {
+  seed: number;
+  mode: string;
+  eligibleCount: number;
+  tracks: { id: string; title: string; artist: string | null; hashtags: string[]; reason: string }[];
+}
+export interface TelegramStatus {
+  state: 'NOT_LOGGED_IN' | 'CONNECTING' | 'AWAITING_CODE' | 'AWAITING_PASSWORD' | 'READY' | 'DISCONNECTED' | 'ERROR';
+  accountLabel: string | null;
+  error?: string;
+}

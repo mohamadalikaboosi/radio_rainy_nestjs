@@ -7,7 +7,9 @@ import { hashPassword, verifyPassword } from './password';
 describe('password hashing', () => {
   it('verifies correct passwords only, salts each hash', async () => {
     const h = await hashPassword('s3cret!');
-    expect(h).toMatch(/^scrypt\$[0-9a-f]+\$[0-9a-f]+$/);
+    expect(h).toMatch(/^scrypt:[0-9a-f]+:[0-9a-f]+$/);
+    // legacy `$` separators still verify
+    expect(await verifyPassword('s3cret!', h.replace(/:/g, '$'))).toBe(true);
     expect(await verifyPassword('s3cret!', h)).toBe(true);
     expect(await verifyPassword('wrong', h)).toBe(false);
     expect(await verifyPassword('x', 'garbage')).toBe(false);

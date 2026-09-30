@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, GatewayTimeoutException, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
+import { TimeoutError } from '../common/timeout';
 import { ZodPipe } from '../common/zod.pipe';
 import { BullMqJobQueue } from '../jobs/bullmq-job-queue';
 import { PlaybackEngine } from '../playback/playback-engine';
@@ -123,6 +124,7 @@ export class AdminTelegramController {
     } catch (err) {
       const rpc = typeof err === 'object' && err !== null && 'errorMessage' in err ? String((err as { errorMessage: unknown }).errorMessage) : undefined;
       if (rpc) throw new BadRequestException({ message: 'Telegram rejected the request', telegramError: rpc });
+      if (err instanceof TimeoutError) throw new GatewayTimeoutException(`${err.message}. Telegram is unreachable from the server; check its network access.`);
       if (err instanceof Error && err.name === 'TelegramNotReadyError') throw new BadRequestException(err.message);
       throw err;
     }

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { stripId3v2 } from '../streaming/id3';
-import { TelegramGateway } from '../telegram/telegram.types';
+import { TelegramFloodWaitError, TelegramGateway, TelegramNotReadyError } from '../telegram/telegram.types';
 import { Track } from '../track/track.types';
 
 /** Live transcoder (ffmpeg) for non-MP3 sources so the shared HTTP stream stays one continuous MP3. */
@@ -37,6 +37,8 @@ export async function* resilientDownload(
       return;
     } catch (err) {
       if (signal?.aborted) return;
+      // Global outages are not fixed by an immediate retry; let the engine back off.
+      if (err instanceof TelegramNotReadyError || err instanceof TelegramFloodWaitError) throw err;
       if (attempt >= maxResumes) throw err;
       logger?.warn({ msg: 'download interrupted, resuming', messageId, offset: received, attempt: attempt + 1, err: err instanceof Error ? err.message : String(err) });
     }

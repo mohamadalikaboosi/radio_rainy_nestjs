@@ -33,11 +33,13 @@ export const envSchema = z.object({
   WHISPER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
 
   LYRICS_CACHE_TTL: z.coerce.number().int().positive().default(86_400),
+  /** Built admin UI (apps/admin/dist). When set (or found next to the API), the API also serves the panel and player. */
+  ADMIN_UI_DIR: z.string().optional(),
   FFMPEG_PATH: z.string().default('ffmpeg'),
   TMP_DIR: z.string().default('/tmp/radio_rainy'),
 
   ADMIN_EMAIL: z.string().email(),
-  ADMIN_PASSWORD_HASH: z.string().regex(/^scrypt\$[0-9a-f]+\$[0-9a-f]+$/, 'expected scrypt$<saltHex>$<hashHex>'),
+  ADMIN_PASSWORD_HASH: z.string().regex(/^scrypt[:$][0-9a-f]+[:$][0-9a-f]+$/, 'expected scrypt:<saltHex>:<hashHex> (generate with: pnpm --filter @radio_rainy/api hash-password <password>)'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 });
 

@@ -342,3 +342,18 @@ Logging: pino, JSON, request/job ids, redaction of `TELEGRAM_API_HASH`, `TELEGRA
 4. **Admin auth**: seeded SUPER_ADMIN from env (`ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH`) + JWT login — OK? Or you want an external IdP?
 5. **Custom-rule `weight`**: I propose priority = strict order (first rule with eligible tracks wins); `weight` only applies among rules that share the same priority tier. OK?
 6. Multiple weighted hashtags on one track: use **max** weight (recommended) or **sum**?
+
+---
+
+## Implementation notes (deviations from this design)
+
+The design above was approved with the following answers and then implemented; where the code differs from the text above, the code wins:
+
+* **DB access**: plain `pg` + SQL migrations (`apps/api/src/database/migrations.ts`) instead of Prisma — direct control of `FOR UPDATE`, advisory locks and partial indexes, and no engine download step.
+* **Codec/latency**: MP3 is passed through (ID3 stripped, bitrate measured from size/duration); everything else is transcoded by ffmpeg to MP3 128k. Defaults tuned for low latency (2 s burst, 4 KiB slices, 128 KiB Telegram chunks, next-track prefetch, continuous pacing timeline).
+* **Whisper**: optional (`WHISPER_URL` unset ⇒ feature off, no errors). OpenAI-compatible `/v1/audio/transcriptions`.
+* **Infra**: Postgres + Redis; Redis is also used for pub/sub of admin commands to the leader.
+* **Admin auth**: single SUPER_ADMIN from env (`ADMIN_EMAIL`, scrypt `ADMIN_PASSWORD_HASH`) + JWT (HS256, 8 h), login rate limiting. No `admin_users` table.
+* **Telegram session**: created from the panel (phone/code/2FA) and stored **encrypted (AES-256-GCM)** in `telegram_session`; `TELEGRAM_SESSION` env is only an optional bootstrap.
+* **Custom rules**: strict priority; rules sharing a priority form a tier where `weight` applies. Track weight across several weighted hashtags = **max**.
+* **Extra**: public player page (`/`), admin panel (`/panel`) served by the API, audit log with secret scrubbing, hashtag stats table refreshed every 60 s.

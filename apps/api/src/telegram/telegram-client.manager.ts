@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } f
 import { Api, TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
+import { withTimeout } from '../common/timeout';
 import { withFloodWait } from './flood-wait';
 import { maskPhone, TelegramSessionStore } from './telegram-session.store';
 import { TelegramNotReadyError } from './telegram.types';
@@ -30,6 +31,7 @@ interface PendingLogin {
 }
 
 const LOGIN_TTL_MS = 5 * 60_000;
+const LOGIN_STEP_TIMEOUT_MS = 30_000;
 
 /** Owns the MTProto client: session load, reconnect supervision and the interactive (admin panel) login flow. */
 @Injectable()
@@ -146,16 +148,18 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
   async beginLogin(phone: string, actor: string): Promise<void> {
     await this.cancelLogin();
     const client = this.newClient('');
-    await client.connect();
     try {
-      const { phoneCodeHash } = await withFloodWait('sendCode', () =>
-        client.sendCode({ apiId: this.config.TELEGRAM_API_ID, apiHash: this.config.TELEGRAM_API_HASH }, phone),
+      await withTimeout(client.connect(), LOGIN_STEP_TIMEOUT_MS, 'Connecting to Telegram');
+      const { phoneCodeHash } = await withTimeout(
+        withFloodWait('sendCode', () => client.sendCode({ apiId: this.config.TELEGRAM_API_ID, apiHash: this.config.TELEGRAM_API_HASH }, phone)),
+        LOGIN_STEP_TIMEOUT_MS,
+        'Requesting the login code',
       );
       this.pending = { client, phone, phoneCodeHash, actor, expiresAt: Date.now() + LOGIN_TTL_MS };
       this.state = 'AWAITING_CODE';
       this.logger.log({ msg: 'telegram login code requested', phone: maskPhone(phone), actor });
     } catch (err) {
-      await client.disconnect();
+      await client.disconnect().catch((e: unknown) => this.logger.warn({ msg: 'disconnect failed', err: String(e) }));
       throw err;
     }
   }
@@ -164,7 +168,7 @@ export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDe
   async submitCode(code: string): Promise<'READY' | 'AWAITING_PASSWORD'> {
     const p = this.requirePending();
     try {
-      await p.client.invoke(new Api.auth.SignIn({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash, phoneCode: code }));
+      await withTimeout(p.client.invoke(new Api.auth.SignIn({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash, phoneCode: code })), LOGIN_STEP_TIMEOUT_MS, 'Verifying the code');
     } catch (err) {
       if (this.rpcMessage(err) === 'SESSION_PASSWORD_NEEDED') {
         this.state = 'AWAITING_PASSWORD';
