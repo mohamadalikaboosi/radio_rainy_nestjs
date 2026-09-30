@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
+import { AdminModule } from './admin/admin.module';
 import { LyricsAlignmentService } from './alignment/lyrics-alignment.service';
 import { APP_CONFIG, AppConfig, loadConfig } from './config/app-config';
 import { DatabaseService } from './database/database.service';
@@ -39,6 +40,7 @@ import { createTranscriptionProvider } from './transcription/transcription.facto
 @Global()
 @Module({
   imports: [
+    AdminModule,
     LoggerModule.forRootAsync({
       inject: [APP_CONFIG],
       useFactory: (cfg: AppConfig) => ({
@@ -143,6 +145,6 @@ import { createTranscriptionProvider } from './transcription/transcription.facto
     },
     { provide: STREAM_OPTIONS, useValue: { maxBacklogBytes: 512 * 1024, stationName: 'radio_rainy' } },
   ],
-  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, TelegramClientManager, TelegramTrackDiscovery, LyricsPipeline, PlaybackEngine, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore],
+  exports: [Broadcaster, APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, TelegramClientManager, TelegramTrackDiscovery, LyricsPipeline, PlaybackEngine, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore],
 })
 export class AppModule {}

@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { RadioScheduler } from '../radio/radio-scheduler';
 import { RadioStateRepository } from '../radio/radio-state.repository';
 import { Broadcaster } from '../streaming/broadcaster';
+import { TelegramFloodWaitError, TelegramNotReadyError } from '../telegram/telegram.types';
 import { newTimeline, pace, Timeline } from '../streaming/pacer';
 import { TrackRepository } from '../track/track.repository';
 import { Track } from '../track/track.types';
@@ -143,7 +144,12 @@ export class PlaybackEngine {
       const plan = await this.takeNext();
       if (!plan) continue;
       const outcome = await this.playOne(plan);
-      if (outcome === 'ERROR') {
+      if (outcome === 'OUTAGE') {
+        // Telegram itself is unavailable (not logged in / flood wait): not the tracks' fault, so don't penalize them.
+        await this.d.state.setStatus('ERROR', 'Telegram unavailable');
+        failures = Math.min(failures + 1, 6);
+        await this.idle(Math.min(o.maxBackoffMs, 1000 * 2 ** failures));
+      } else if (outcome === 'ERROR') {
         failures++;
         if (failures >= 3) await this.d.state.setStatus('ERROR', 'Repeated playback failures (Telegram unreachable?)');
         await this.idle(Math.min(o.maxBackoffMs, 250 * 2 ** failures));
@@ -178,7 +184,10 @@ export class PlaybackEngine {
       }
       if (this.plan) {
         const version = (await this.d.state.get()).configurationVersion;
-        if (this.plan.configVersion === version) {
+        // The preselected track may have been disabled/removed since it was chosen.
+        const fresh = await this.d.tracks.findById(this.plan.track.id);
+        const stillPlayable = fresh !== null && fresh.status === 'READY' && fresh.enabled;
+        if (this.plan.configVersion === version && stillPlayable) {
           const p = this.plan;
           this.plan = null;
           await this.d.state.setNext(null);
@@ -249,7 +258,7 @@ export class PlaybackEngine {
     })();
   }
 
-  private async playOne(plan: Plan): Promise<'OK' | 'ERROR' | 'ABORTED'> {
+  private async playOne(plan: Plan): Promise<'OK' | 'ERROR' | 'OUTAGE' | 'ABORTED'> {
     const { track, audio, ac } = plan;
     const o = this.d.options;
     this.currentAbort = ac;
@@ -258,6 +267,7 @@ export class PlaybackEngine {
     let historyId: string | null = null;
     let reason: EndReason = 'FINISHED';
     let failed = false;
+    let outage = false;
     let bytes = 0;
     try {
       for await (const slice of pace(audio.bytes, {
@@ -284,15 +294,17 @@ export class PlaybackEngine {
       else if (bytes === 0) throw new Error('track produced no audio data');
     } catch (err) {
       failed = true;
+      outage = err instanceof TelegramNotReadyError || err instanceof TelegramFloodWaitError;
       reason = 'ERROR';
-      this.logger.error({ msg: 'streaming error, skipping track', trackId: track.id, title: track.title, bytes, err: err instanceof Error ? err.message : String(err) });
+      this.logger.error({ msg: outage ? 'telegram unavailable, cannot stream' : 'streaming error, skipping track', trackId: track.id, title: track.title, bytes, err: err instanceof Error ? err.message : String(err) });
     } finally {
       this.currentAbort = null;
       await audio.cancel().catch((e: unknown) => this.logger.warn({ msg: 'audio cancel failed', err: String(e) }));
       if (historyId) await this.d.history.end(historyId, reason).catch((e: unknown) => this.logger.error({ msg: 'history end failed', err: String(e) }));
     }
-    await this.d.tracks.recordPlaybackResult(track.id, !failed).catch((e: unknown) => this.logger.error({ msg: 'record result failed', err: String(e) }));
+    if (!outage) await this.d.tracks.recordPlaybackResult(track.id, !failed).catch((e: unknown) => this.logger.error({ msg: 'record result failed', err: String(e) }));
     this.logger.log({ msg: 'playback ended', trackId: track.id, reason, bytes });
+    if (outage) return 'OUTAGE';
     return failed ? 'ERROR' : reason === 'FINISHED' ? 'OK' : 'ABORTED';
   }
 }

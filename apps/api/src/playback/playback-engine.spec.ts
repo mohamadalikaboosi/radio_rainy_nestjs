@@ -193,6 +193,21 @@ describe('PlaybackEngine', () => {
     await slowH.engine.stop();
   });
 
+  it('Telegram outage does NOT mark tracks FAILED: status ERROR, recovers when Telegram is back', async () => {
+    addTrack(gw, 1);
+    addTrack(gw, 2);
+    await discovery.sync();
+    gw.notReady = true;
+    h.engine.start();
+    await waitFor(async () => (await h.state.get()).status === 'ERROR');
+    await new Promise((r) => setTimeout(r, 150));
+    const rows = (await db.query<{ status: string; consecutive_failures: number }>(`SELECT status, consecutive_failures FROM tracks`)).rows;
+    expect(rows.every((r) => r.status === 'READY' && r.consecutive_failures === 0)).toBe(true);
+    gw.notReady = false;
+    h.engine.wake();
+    await waitFor(async () => (await h.state.get()).status === 'PLAYING', 12000);
+  });
+
   it('radio disabled -> STOPPED', async () => {
     addTrack(gw, 1);
     await discovery.sync();

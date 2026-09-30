@@ -84,6 +84,16 @@ export class TelegramTrackDiscovery {
     return report;
   }
 
+  /** Re-reads a single message from Telegram (admin "refresh metadata"). Returns null if it no longer exists. */
+  async refreshMessage(messageId: number): Promise<{ outcome: string } | null> {
+    const msg = await this.gateway.getAudioMessage(messageId);
+    if (!msg) return null;
+    const report: SyncReport = { channelId: msg.channelId, full: false, scanned: 1, created: 0, updated: 0, unchanged: 0, restored: 0, failed: 0, markedUnavailable: 0, durationMs: 0 };
+    await this.processMessage(msg, report);
+    const outcome = (['created', 'updated', 'restored', 'unchanged', 'failed'] as const).find((k) => report[k] > 0) ?? 'unchanged';
+    return { outcome };
+  }
+
   private async processMessage(msg: TelegramAudioMessage, report: SyncReport): Promise<void> {
     try {
       const parsed = parseCaption(msg.caption, {
