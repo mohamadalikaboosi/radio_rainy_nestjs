@@ -12,6 +12,8 @@ export interface RadioStateRow {
   rotationCursor: number;
   configurationVersion: number;
   transitionSeq: number;
+  adId: string | null;
+  adStartedAt: Date | null;
 }
 
 interface Row {
@@ -24,6 +26,8 @@ interface Row {
   rotation_cursor: number;
   configuration_version: number;
   transition_seq: string;
+  ad_id: string | null;
+  ad_started_at: Date | null;
 }
 
 /** Per-station playback state. Every method is scoped by the Telegram channel id. */
@@ -35,7 +39,7 @@ export class RadioStateRepository {
     const r = (
       await this.db.query<Row>(
         `SELECT s.status, s.status_reason, s.current_track_id, s.current_history_id, s.started_at, s.next_track_id, s.rotation_cursor,
-                c.version AS configuration_version, s.transition_seq
+                c.version AS configuration_version, s.transition_seq, s.ad_id, s.ad_started_at
            FROM radio_state s JOIN radio_configuration c ON c.channel_id = s.channel_id WHERE s.channel_id = $1`,
         [channelId],
       )
@@ -51,6 +55,8 @@ export class RadioStateRepository {
       rotationCursor: r.rotation_cursor,
       configurationVersion: r.configuration_version,
       transitionSeq: Number(r.transition_seq),
+      adId: r.ad_id,
+      adStartedAt: r.ad_started_at,
     };
   }
 
@@ -58,7 +64,7 @@ export class RadioStateRepository {
   async beginTrack(channelId: string, trackId: string, historyId: string, startedAt: Date): Promise<number> {
     const r = await this.db.query<{ transition_seq: string }>(
       `UPDATE radio_state SET status = 'PLAYING', status_reason = NULL, current_track_id = $2, current_history_id = $3, started_at = $4,
-              transition_seq = transition_seq + 1, updated_at = now() WHERE channel_id = $1 RETURNING transition_seq`,
+              transition_seq = transition_seq + 1, ad_id = NULL, ad_started_at = NULL, updated_at = now() WHERE channel_id = $1 RETURNING transition_seq`,
       [channelId, trackId, historyId, startedAt],
     );
     return Number(r.rows[0]?.transition_seq ?? 0);
@@ -73,6 +79,11 @@ export class RadioStateRepository {
               next_track_id = CASE WHEN $2 = 'PLAYING' THEN next_track_id ELSE NULL END, updated_at = now() WHERE channel_id = $1`,
       [channelId, status, reason],
     );
+  }
+
+  /** An ad is on air (the public API reports it instead of the track). */
+  async setAd(channelId: string, adId: string | null, startedAt: Date | null): Promise<void> {
+    await this.db.query('UPDATE radio_state SET ad_id = $2, ad_started_at = $3, updated_at = now() WHERE channel_id = $1', [channelId, adId, startedAt]);
   }
 
   async setNext(channelId: string, trackId: string | null): Promise<void> {

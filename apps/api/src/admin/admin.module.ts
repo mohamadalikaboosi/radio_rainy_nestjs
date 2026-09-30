@@ -15,9 +15,11 @@ import { RadioStateRepository } from '../radio/radio-state.repository';
 import { TelegramClientManager } from '../telegram/telegram-client.manager';
 import { TelegramTrackDiscovery } from '../telegram/track-discovery';
 import { TrackRepository } from '../track/track.repository';
+import { SessionCipher } from '../telegram/session-cipher';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminGuard } from './admin.guard';
 import { AdminAuthController, AdminChannelsController, AdminLiveController, AdminReportsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
+import { AdminAdsController, AdminEngagementController, AdminSponsorsController } from '../engagement/engagement-admin.controllers';
 import { AdminLanguageController, AdminSettingsController } from './settings-language.controllers';
 import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
@@ -44,7 +46,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
 }
 
 @Module({
-  controllers: [AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
+  controllers: [AdminAdsController, AdminSponsorsController, AdminEngagementController, AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
     { provide: AdminAuthService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new AdminAuthService({ adminEmail: c.ADMIN_EMAIL, passwordHash: c.ADMIN_PASSWORD_HASH, jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
@@ -86,7 +88,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     {
       provide: ChannelService,
       inject: [ChannelRepository, TELEGRAM_GATEWAY, RADIO_BUS, AuditService, APP_CONFIG],
-      useFactory: (ch: ChannelRepository, gw: TelegramGateway, bus: RadioBus, a: AuditService, c: AppConfig) => new ChannelService(ch, gw, bus, a, c.RADIO_RECENT_TRACK_WINDOW),
+      useFactory: (ch: ChannelRepository, gw: TelegramGateway, bus: RadioBus, a: AuditService, c: AppConfig) => new ChannelService(ch, gw, bus, a, c.RADIO_RECENT_TRACK_WINDOW, new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY, 'live-rtmp-key')),
     },
   ],
 })

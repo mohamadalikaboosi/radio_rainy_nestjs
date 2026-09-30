@@ -3,7 +3,7 @@ import { Broadcaster } from '../streaming/broadcaster';
 import { Station, StationManager } from './station-manager';
 
 const row = (id: string, over: Partial<ChannelRow> = {}): ChannelRow => ({
-  id, reference: `@c${id}`, title: `C${id}`, username: null, slug: `c${id}`, started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, createdAt: new Date(), ...over,
+  id, reference: `@c${id}`, title: `C${id}`, username: null, slug: `c${id}`, started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, createdAt: new Date(), ...over,
 });
 
 function fakeStation(channel: ChannelRow) {
@@ -68,6 +68,18 @@ describe('StationManager', () => {
     rows = [row('1', { telegramLiveEnabled: false }), row('2', { started: false })];
     await mgr.reconcile();
     expect(built.get('1')?.log).toEqual(['engine.start', 'live.start', 'live.stop']);
+  });
+
+  it('reconnects the live stream when the manual link/key changed, and only then', async () => {
+    rows = [row('1', { telegramLiveEnabled: true, liveTargetRev: 1 }), row('2', { started: false })];
+    await mgr.reconcile();
+    await mgr.reconcile();
+    expect(built.get('1')?.log).toEqual(['engine.start', 'live.start']);
+    rows = [row('1', { telegramLiveEnabled: true, liveTargetRev: 2 }), row('2', { started: false })];
+    await mgr.reconcile();
+    expect(built.get('1')?.log).toEqual(['engine.start', 'live.start', 'live.stop', 'live.start']);
+    await mgr.reconcile();
+    expect(built.get('1')?.log).toHaveLength(4);
   });
 
   it('removed channels are stopped; stopAll stops everything', async () => {

@@ -6,7 +6,7 @@ import { TelegramFloodWaitError, TelegramNotReadyError } from '../telegram/teleg
 import { newTimeline, pace, Timeline } from '../streaming/pacer';
 import { TrackRepository } from '../track/track.repository';
 import { Track } from '../track/track.types';
-import { PrefetchedAudio, TrackAudioPipeline } from './audio-pipeline';
+import { OpenedAudio, PrefetchedAudio, TrackAudioPipeline } from './audio-pipeline';
 import { EndReason, PlaybackHistoryRepository } from './playback-history.repository';
 
 export interface EngineOptions {
@@ -39,6 +39,20 @@ interface Plan {
   configVersion: number;
 }
 
+export interface PlayableAd {
+  id: string;
+  name: string;
+  open(signal: AbortSignal): OpenedAudio;
+}
+
+/** Audio ads played between tracks. Optional: an engine without it never plays ads. */
+export interface AdSource {
+  /** Play an ad after this many tracks (0 = ads off). */
+  everyN(channelId: string): Promise<number>;
+  pick(channelId: string): Promise<PlayableAd | null>;
+  played(adId: string): Promise<void>;
+}
+
 export interface EngineDeps {
   /** Telegram channel id of the station this engine plays. */
   channelId: string;
@@ -49,6 +63,7 @@ export interface EngineDeps {
   audio: TrackAudioPipeline;
   broadcaster: Broadcaster;
   options: EngineOptions;
+  ads?: AdSource;
 }
 
 /**
@@ -67,6 +82,8 @@ export class PlaybackEngine {
   private currentAbort: AbortController | null = null;
   private abortReason: EndReason | null = null;
   private forcedTrackId: string | null = null;
+  private adAbort: AbortController | null = null;
+  private tracksSinceAd = 0;
   private plan: Plan | null = null;
   private planPromise: Promise<void> | null = null;
 
@@ -104,6 +121,10 @@ export class PlaybackEngine {
 
   /** Idempotent: repeated calls during one transition collapse into one. `expectedSeq` guards against stale UI clicks. */
   skip(expectedSeq?: number): SkipStatus {
+    if (this.adAbort && !this.adAbort.signal.aborted) {
+      this.adAbort.abort();
+      return 'SKIPPED';
+    }
     const cur = this.currentPlayback;
     if (!cur || !this.currentAbort) return 'NOT_PLAYING';
     if (expectedSeq !== undefined && expectedSeq !== cur.seq) return 'STALE';
@@ -115,6 +136,10 @@ export class PlaybackEngine {
   /** Plays `trackId` next (and cuts the current track). Without an id it is a skip that respects the radio configuration. */
   playNext(trackId?: string): SkipStatus {
     if (trackId) this.forcedTrackId = trackId;
+    if (this.adAbort && !this.adAbort.signal.aborted) {
+      this.adAbort.abort();
+      return 'SKIPPED';
+    }
     if (!this.currentAbort) {
       this.wake();
       return 'NOT_PLAYING';
@@ -137,6 +162,7 @@ export class PlaybackEngine {
   }
 
   private abortCurrent(reason: EndReason): void {
+    this.adAbort?.abort();
     if (this.currentAbort && !this.currentAbort.signal.aborted) {
       this.abortReason = reason;
       this.currentAbort.abort();
@@ -149,6 +175,8 @@ export class PlaybackEngine {
     const o = this.d.options;
     let failures = 0;
     while (!this.stopping) {
+      await this.maybePlayAd();
+      if (this.stopping) break;
       const plan = await this.takeNext();
       if (!plan) continue;
       const outcome = await this.playOne(plan);
@@ -163,6 +191,53 @@ export class PlaybackEngine {
         await this.idle(Math.min(o.maxBackoffMs, 250 * 2 ** failures));
       } else if (outcome === 'OK') {
         failures = 0;
+      }
+    }
+  }
+
+  /** Between two tracks: plays an ad when `everyN` tracks have been played since the last one. Never blocks the radio on failure. */
+  private async maybePlayAd(): Promise<void> {
+    const ads = this.d.ads;
+    if (!ads || this.tracksSinceAd === 0) return;
+    let ad: PlayableAd | null = null;
+    try {
+      const every = await ads.everyN(this.d.channelId);
+      if (every <= 0 || this.tracksSinceAd < every) return;
+      ad = await ads.pick(this.d.channelId);
+    } catch (err) {
+      this.logger.warn({ msg: 'ad selection failed; continuing with music', err: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    this.tracksSinceAd = 0; // even without an ad: don't re-check after every single track
+    if (!ad) return;
+    await this.playAd(ad, ads);
+  }
+
+  private async playAd(ad: PlayableAd, ads: AdSource): Promise<void> {
+    const o = this.d.options;
+    const ac = new AbortController();
+    this.adAbort = ac;
+    const startSent = this.timeline.sentSeconds;
+    let started = false;
+    let audio: PrefetchedAudio | null = null;
+    try {
+      audio = new PrefetchedAudio(ad.open(ac.signal), o.prefetchBytes);
+      for await (const slice of pace(audio.bytes, { bytesPerSec: audio.bytesPerSec, burstSeconds: o.burstSeconds, sliceBytes: o.sliceBytes, now: o.now, sleep: o.sleep, signal: ac.signal, timeline: this.timeline })) {
+        if (!started) {
+          started = true;
+          await this.d.state.setAd(this.d.channelId, ad.id, new Date(this.timeline.anchor + startSent * 1000));
+          this.logger.log({ msg: 'ad started', channelId: this.d.channelId, adId: ad.id, name: ad.name, listeners: this.d.broadcaster.listenerCount });
+        }
+        this.d.broadcaster.push(slice);
+      }
+    } catch (err) {
+      this.logger.warn({ msg: 'ad playback failed; continuing with music', adId: ad.id, err: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.adAbort = null;
+      await audio?.cancel().catch((e: unknown) => this.logger.warn({ msg: 'ad cancel failed', err: String(e) }));
+      if (started) {
+        await this.d.state.setAd(this.d.channelId, null, null).catch((e: unknown) => this.logger.warn({ msg: 'clear ad failed', err: String(e) }));
+        await ads.played(ad.id).catch((e: unknown) => this.logger.warn({ msg: 'ad play count failed', err: String(e) }));
       }
     }
   }
@@ -292,6 +367,7 @@ export class PlaybackEngine {
           historyId = await this.d.history.start(track.id, startedAt);
           const seq = await this.d.state.beginTrack(this.d.channelId, track.id, historyId, startedAt);
           this.currentPlayback = { track, startedAt, historyId, seq, bytesPerSec: audio.bytesPerSec };
+          this.tracksSinceAd++;
           this.logger.log({ msg: 'playback started', channelId: this.d.channelId, trackId: track.id, title: track.title, artist: track.artist, seq, listeners: this.d.broadcaster.listenerCount });
         }
         bytes += slice.length;

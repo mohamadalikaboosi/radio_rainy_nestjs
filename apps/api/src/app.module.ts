@@ -1,5 +1,14 @@
 import { Global, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
+import { ManualOrAutoLiveApi } from './live/manual-live-api';
+import { AdsRepository } from './engagement/ads.repository';
+import { DbAdSource } from './engagement/ad-source';
+import { EngagementPublicController } from './engagement/engagement-public.controller';
+import { EngagementSettingsRepository } from './engagement/engagement-settings.repository';
+import { SponsorsRepository } from './engagement/sponsors.repository';
+import { TagPollRepository } from './engagement/tag-poll.repository';
+import { TagVoteService } from './engagement/tag-vote.service';
+import { TagVoteTicker } from './engagement/tag-vote-ticker';
 import { AdminModule } from './admin/admin.module';
 import { LyricsAlignmentService } from './alignment/lyrics-alignment.service';
 import { ChannelRepository, ChannelRow } from './channels/channel.repository';
@@ -7,7 +16,7 @@ import { LexiconRepository } from './language/lexicon';
 import { LanguageService } from './language/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
-import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveStreamer } from './live/telegram-live-streamer';
+import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
 import { AudioStoreSource } from './storage/audio-store';
 import { SettingsAudioStoreSource } from './storage/audio-store.source';
@@ -68,7 +77,7 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
       }),
     }),
   ],
-  controllers: [RadioController],
+  controllers: [RadioController, EngagementPublicController],
   providers: [
     { provide: APP_CONFIG, useFactory: (): AppConfig => loadConfig() },
     { provide: DatabaseService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new DatabaseService(c) },
@@ -79,6 +88,11 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
     { provide: PlaybackHistoryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PlaybackHistoryRepository(db) },
     { provide: ChannelRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new ChannelRepository(db) },
     { provide: LexiconRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new LexiconRepository(db) },
+
+    { provide: AdsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AdsRepository(db) },
+    { provide: SponsorsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new SponsorsRepository(db) },
+    { provide: EngagementSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new EngagementSettingsRepository(db) },
+    { provide: TagPollRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new TagPollRepository(db) },
 
     { provide: SessionCipher, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY) },
     {
@@ -102,10 +116,12 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
       useFactory: (inner: GramJsTelegramGateway, src: AudioStoreSource, t: TrackRepository): TelegramGateway => new CachingTelegramGateway(inner, src, resolverFrom((c, m) => t.getAudioIdentity(c, m))),
     },
     { provide: GramJsLiveApi, inject: [TelegramClientManager, GramJsTelegramGateway], useFactory: (m: TelegramClientManager, g: GramJsTelegramGateway) => new GramJsLiveApi(m, g) },
+    { provide: 'LIVE_API', inject: [GramJsLiveApi, ChannelRepository, APP_CONFIG], useFactory: (auto: GramJsLiveApi, ch: ChannelRepository, c: AppConfig) => new ManualOrAutoLiveApi(auto, ch, new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY, 'live-rtmp-key')) },
 
     { provide: BullMqJobQueue, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new BullMqJobQueue({ redisUrl: c.REDIS_URL, prefix: c.QUEUE_PREFIX }) },
     { provide: JOB_QUEUE, useExisting: BullMqJobQueue },
     { provide: RADIO_BUS, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new RedisRadioBus(c.REDIS_URL) },
+    { provide: TagVoteService, inject: [EngagementSettingsRepository, TagPollRepository, RADIO_BUS], useFactory: (s: EngagementSettingsRepository, p: TagPollRepository, b: RadioBus) => new TagVoteService(s, p, b) },
 
     {
       provide: LyricsService,
@@ -137,11 +153,11 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
       useFactory: (q: BullMqJobQueue, p: LyricsPipeline, d: TelegramTrackDiscovery, ch: ChannelRepository, c: AppConfig) => new JobsRunner(q, p, d, ch, c.TELEGRAM_SYNC_INTERVAL_SECONDS),
     },
 
-    { provide: RadioScheduler, inject: [RadioConfigRepository, PlaybackHistoryRepository, RadioStateRepository], useFactory: (c: RadioConfigRepository, h: PlaybackHistoryRepository, s: RadioStateRepository) => new RadioScheduler(c, h, s) },
+    { provide: RadioScheduler, inject: [RadioConfigRepository, PlaybackHistoryRepository, RadioStateRepository, TagVoteService], useFactory: (c: RadioConfigRepository, h: PlaybackHistoryRepository, s: RadioStateRepository, v: TagVoteService) => new RadioScheduler(c, h, s, undefined, undefined, v) },
     {
       provide: StationManager,
-      inject: [ChannelRepository, RadioStateRepository, RadioScheduler, PlaybackHistoryRepository, TrackRepository, TELEGRAM_GATEWAY, GramJsLiveApi, APP_CONFIG],
-      useFactory: (channels: ChannelRepository, state: RadioStateRepository, sch: RadioScheduler, h: PlaybackHistoryRepository, t: TrackRepository, gw: TelegramGateway, liveApi: GramJsLiveApi, c: AppConfig) =>
+      inject: [ChannelRepository, RadioStateRepository, RadioScheduler, PlaybackHistoryRepository, TrackRepository, TELEGRAM_GATEWAY, 'LIVE_API', APP_CONFIG, AdsRepository, EngagementSettingsRepository],
+      useFactory: (channels: ChannelRepository, state: RadioStateRepository, sch: RadioScheduler, h: PlaybackHistoryRepository, t: TrackRepository, gw: TelegramGateway, liveApi: TelegramLiveApi, c: AppConfig, adsRepo: AdsRepository, engagement: EngagementSettingsRepository) =>
         new StationManager(channels, state, (channel: ChannelRow): Station => {
           const broadcaster = new Broadcaster(Math.round(((c.RADIO_STREAM_BITRATE_KBPS * 1000) / 8) * c.RADIO_PREBUFFER_SECONDS));
           const engine = new PlaybackEngine({
@@ -152,6 +168,7 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
             tracks: t,
             audio: new TrackAudioPipeline(gw, new FfmpegLiveTranscoder(c.FFMPEG_PATH), c.RADIO_STREAM_BITRATE_KBPS),
             broadcaster,
+            ads: new DbAdSource(adsRepo, engagement, new FfmpegLiveTranscoder(c.FFMPEG_PATH), c.RADIO_STREAM_BITRATE_KBPS),
             options: { burstSeconds: c.RADIO_PREBUFFER_SECONDS, sliceBytes: 4096, preselectSeconds: 20, prefetchBytes: 256 * 1024, idleRetryMs: 5000, maxBackoffMs: 30_000, now: realClock.now, sleep: realClock.sleep },
           });
           const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS), channels, DEFAULT_LIVE_OPTIONS);
@@ -160,16 +177,20 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
     },
     {
       provide: PlaybackRunner,
-      inject: [DatabaseService, StationManager, RADIO_BUS, PlaybackHistoryRepository],
-      useFactory: (db: DatabaseService, sm: StationManager, bus: RadioBus, h: PlaybackHistoryRepository) => new PlaybackRunner(new PlaybackSupervisor(db, sm, bus, h, 5000, undefined, new ListenerSampler(db, sm))),
+      inject: [DatabaseService, StationManager, RADIO_BUS, PlaybackHistoryRepository, TagVoteService],
+      useFactory: (db: DatabaseService, sm: StationManager, bus: RadioBus, h: PlaybackHistoryRepository, votes: TagVoteService) => {
+        const sampler = new ListenerSampler(db, sm);
+        const ticker = new TagVoteTicker(sm, votes);
+        return new PlaybackRunner(new PlaybackSupervisor(db, sm, bus, h, 5000, undefined, { start: () => { sampler.start(); ticker.start(); }, stop: () => { sampler.stop(); ticker.stop(); } }));
+      },
     },
     {
       provide: CurrentRadioService,
-      inject: [RadioStateRepository, TrackRepository, LyricsRepository],
-      useFactory: (s: RadioStateRepository, t: TrackRepository, l: LyricsRepository) => new CurrentRadioService(s, t, l),
+      inject: [RadioStateRepository, TrackRepository, LyricsRepository, AdsRepository],
+      useFactory: (s: RadioStateRepository, t: TrackRepository, l: LyricsRepository, a: AdsRepository) => new CurrentRadioService(s, t, l, undefined, a),
     },
     { provide: STREAM_OPTIONS, useValue: { maxBacklogBytes: 512 * 1024, stationName: 'radio_rainy' } },
   ],
-  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TELEGRAM_GATEWAY, 'AUDIO_STORE_SOURCE', TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore, LanguageService],
+  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TELEGRAM_GATEWAY, 'AUDIO_STORE_SOURCE', TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore, LanguageService, AdsRepository, SponsorsRepository, EngagementSettingsRepository, TagPollRepository, TagVoteService],
 })
 export class AppModule {}

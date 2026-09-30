@@ -11,6 +11,8 @@ export interface Station {
   broadcaster: Broadcaster;
   engine: PlaybackEngine;
   live: TelegramLiveStreamer;
+  /** Revision of the manual live target this station's streamer connected with (a change => reconnect). */
+  liveRev?: number;
 }
 
 export type StationFactory = (channel: ChannelRow) => Station;
@@ -64,8 +66,13 @@ export class StationManager {
       } else {
         station.channel = row;
       }
-      if (row.telegramLiveEnabled && !station.live.running) station.live.start();
-      else if (!row.telegramLiveEnabled && station.live.running) await station.live.stop();
+      if (row.telegramLiveEnabled && station.live.running && station.liveRev !== undefined && station.liveRev !== row.liveTargetRev) {
+        await station.live.stop(); // the link/key changed: reconnect with the new target
+      }
+      if (row.telegramLiveEnabled && !station.live.running) {
+        station.liveRev = row.liveTargetRev;
+        station.live.start();
+      } else if (!row.telegramLiveEnabled && station.live.running) await station.live.stop();
     }
   }
 

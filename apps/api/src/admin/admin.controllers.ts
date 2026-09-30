@@ -322,6 +322,17 @@ export class AdminChannelsController {
     return this.channels.setLive(id, body.enabled, ctxOf(req));
   }
 
+  /** Manual live target: Telegram's "Server URL" + "Stream key" (or one full link). The key is never returned. */
+  @Put(':channelId/live-target')
+  setLiveTarget(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ url: z.string().min(8).max(400), key: z.string().max(300).optional() }))) body: { url: string; key?: string }, @Req() req: AdminRequest) {
+    return this.channels.setLiveTarget(id, body, ctxOf(req));
+  }
+
+  @Delete(':channelId/live-target')
+  clearLiveTarget(@Param('channelId', ChannelIdPipe) id: string, @Req() req: AdminRequest) {
+    return this.channels.setLiveTarget(id, null, ctxOf(req));
+  }
+
   @Post(':channelId/sync')
   @HttpCode(202)
   async sync(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ full: z.boolean().default(false) }).default({ full: false }))) body: { full: boolean }, @Req() req: AdminRequest) {

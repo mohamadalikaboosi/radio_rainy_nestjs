@@ -8,8 +8,20 @@ import { computePosition, findActiveLine, ActiveLine } from './playback-position
 import { RadioStateRepository, RadioStateRow } from './radio-state.repository';
 import { RadioStatus } from './radio.types';
 
+export interface AdView {
+  id: string;
+  name: string;
+  startedAt: string | null;
+  duration: number | null;
+  linkUrl: string | null;
+  ctaLabel: string | null;
+  imageUrl: string | null;
+}
+
 export interface CurrentView {
-  status: RadioStatus;
+  /** 'AD' while an audio ad is on air (then `ad` is set and the track fields are omitted). */
+  status: RadioStatus | 'AD';
+  ad?: AdView;
   trackId?: string;
   title?: string;
   artist?: string | null;
@@ -50,6 +62,7 @@ export class CurrentRadioService {
     private readonly tracks: TrackRepository,
     private readonly lyrics: LyricsRepository,
     private readonly now: () => number = () => Date.now(),
+    private readonly ads?: { onAir(id: string): Promise<{ id: string; name: string; linkUrl: string | null; ctaLabel: string | null; hasImage: boolean; durationSeconds: number | null } | null> },
   ) {}
 
   private load(channelId: string): Promise<Snapshot> {
@@ -69,6 +82,16 @@ export class CurrentRadioService {
   async current(channelId: string): Promise<CurrentView> {
     const { state, track } = await this.load(channelId);
     const serverTime = new Date(this.now()).toISOString();
+    if (state.adId && this.ads) {
+      const ad = await this.ads.onAir(state.adId).catch(() => null);
+      if (ad) {
+        return {
+          status: 'AD',
+          ad: { id: ad.id, name: ad.name, startedAt: state.adStartedAt?.toISOString() ?? null, duration: ad.durationSeconds, linkUrl: ad.linkUrl ? `/radio/go/ad/${ad.id}` : null, ctaLabel: ad.ctaLabel, imageUrl: ad.hasImage ? `/radio/ads/${ad.id}/image` : null },
+          serverTime,
+        };
+      }
+    }
     if (state.status !== 'PLAYING' || !track || !state.startedAt) return { status: state.status, serverTime };
     return {
       status: 'PLAYING',
@@ -85,13 +108,13 @@ export class CurrentRadioService {
 
   async currentLyrics(channelId: string): Promise<LyricsView | null> {
     const { state, track } = await this.load(channelId);
-    if (state.status !== 'PLAYING' || !track) return null;
+    if (state.adId || state.status !== 'PLAYING' || !track) return null;
     return this.lyricsFor(track);
   }
 
   async activeLine(channelId: string): Promise<{ status: PublicLyricsStatus; trackId: string; position: number; active: ActiveLine | null } | null> {
     const { state, track } = await this.load(channelId);
-    if (state.status !== 'PLAYING' || !track || !state.startedAt) return null;
+    if (state.adId || state.status !== 'PLAYING' || !track || !state.startedAt) return null;
     const view = await this.lyricsFor(track);
     const position = round1(computePosition(state.startedAt, this.now(), track.duration));
     return { status: view.status, trackId: track.id, position, active: view.lines ? findActiveLine(view.lines, position) : null };

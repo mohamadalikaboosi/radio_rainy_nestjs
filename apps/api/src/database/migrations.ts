@@ -314,4 +314,94 @@ CREATE INDEX listener_samples_at_idx ON listener_samples (at DESC);
 CREATE INDEX playback_history_ended_idx ON playback_history (end_reason, started_at DESC);
 `,
   },
+  {
+    id: '005_engagement',
+    sql: `
+-- Ad currently on air (the public API reports it instead of a track).
+ALTER TABLE radio_state ADD COLUMN ad_id UUID, ADD COLUMN ad_started_at TIMESTAMPTZ;
+
+-- Manual Telegram live target (the "Server URL" + "Stream key" of Telegram's "Stream with..." screen). The key is stored encrypted.
+ALTER TABLE channels ADD COLUMN live_rtmp_url TEXT, ADD COLUMN live_rtmp_key_enc TEXT, ADD COLUMN live_target_rev INTEGER NOT NULL DEFAULT 0;
+
+-- Audio ads, played between tracks. channel_id NULL = every station. Audio/image live in the row (bounded, admin-uploaded).
+CREATE TABLE ads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id BIGINT REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 1),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  link_url TEXT,
+  cta_label TEXT,
+  audio BYTEA,
+  audio_mime TEXT,
+  audio_size INTEGER,
+  bytes_per_sec INTEGER,
+  duration_seconds DOUBLE PRECISION,
+  image BYTEA,
+  image_mime TEXT,
+  plays INTEGER NOT NULL DEFAULT 0,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  last_played_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ads_channel_idx ON ads (channel_id);
+
+-- Sponsors: a banner with a call-to-action link shown in the player.
+CREATE TABLE sponsors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id BIGINT REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  tagline TEXT,
+  url TEXT NOT NULL,
+  cta_label TEXT NOT NULL DEFAULT 'Visit',
+  logo BYTEA,
+  logo_mime TEXT,
+  weight INTEGER NOT NULL DEFAULT 1 CHECK (weight >= 1),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
+  impressions INTEGER NOT NULL DEFAULT 0,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX sponsors_channel_idx ON sponsors (channel_id);
+
+-- Per-station engagement settings: ad frequency and the periodic "which tag shall we play?" vote.
+CREATE TABLE channel_engagement (
+  channel_id BIGINT PRIMARY KEY REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  ads_every_n_tracks INTEGER NOT NULL DEFAULT 0 CHECK (ads_every_n_tracks BETWEEN 0 AND 100),
+  tag_vote_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  tag_vote_interval_minutes INTEGER NOT NULL DEFAULT 60 CHECK (tag_vote_interval_minutes BETWEEN 1 AND 1440),
+  tag_vote_poll_minutes INTEGER NOT NULL DEFAULT 3 CHECK (tag_vote_poll_minutes BETWEEN 1 AND 60),
+  tag_vote_play_minutes INTEGER NOT NULL DEFAULT 20 CHECK (tag_vote_play_minutes BETWEEN 1 AND 240),
+  tag_vote_options INTEGER NOT NULL DEFAULT 3 CHECK (tag_vote_options BETWEEN 2 AND 6),
+  tag_vote_allowlist TEXT[] NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE tag_polls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id BIGINT NOT NULL REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  options TEXT[] NOT NULL,
+  opens_at TIMESTAMPTZ NOT NULL,
+  closes_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' ${enumCheck('status', ['OPEN', 'CLOSED'])},
+  winner TEXT,
+  play_until TIMESTAMPTZ,
+  finished BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX tag_polls_channel_idx ON tag_polls (channel_id, opens_at DESC);
+CREATE TABLE tag_votes (
+  poll_id UUID NOT NULL REFERENCES tag_polls(id) ON DELETE CASCADE,
+  voter_id TEXT NOT NULL,
+  ip_hash TEXT NOT NULL,
+  hashtag TEXT NOT NULL,
+  voted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (poll_id, voter_id)
+);
+CREATE INDEX tag_votes_ip_idx ON tag_votes (poll_id, ip_hash);
+`,
+  },
 ];

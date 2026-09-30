@@ -13,6 +13,11 @@ export interface NextSelection {
   result: SelectionResult | null;
 }
 
+/** Something that can temporarily force one hashtag (e.g. the listeners' vote winner). */
+export interface TagOverride {
+  activeTag(channelId: string): Promise<string | null>;
+}
+
 /** Loads config + candidates + history and asks the (pure) RadioRuleEngine. Contains no selection logic itself. */
 @Injectable()
 export class RadioScheduler {
@@ -24,6 +29,7 @@ export class RadioScheduler {
     private readonly state: RadioStateRepository,
     private readonly engine: RadioRuleEngine = new RadioRuleEngine(),
     private readonly rng: Rng = cryptoRng,
+    private readonly override?: TagOverride,
   ) {}
 
   async selectNext(channelId: string): Promise<NextSelection> {
@@ -38,8 +44,12 @@ export class RadioScheduler {
     const recent = await this.history.recentTrackIds(channelId, Math.max(window, 1));
     const recentIds = st.currentTrackId ? [st.currentTrackId, ...recent.filter((id) => id !== st.currentTrackId)] : recent;
 
+    const forced = (await this.override?.activeTag(channelId)) ?? null;
+    const config = forced
+      ? { ...cfg.snapshot, mode: 'HASHTAG_RANDOM' as const, hashtagMatchMode: 'ANY' as const, hashtags: [{ hashtag: forced, weight: 1 }], fallbackToGlobal: true }
+      : cfg.snapshot;
     const result = this.engine.select(
-      { config: cfg.snapshot, candidates, recentTrackIds: window === 0 ? recentIds.slice(0, 1) : recentIds, rotationCursor: st.rotationCursor },
+      { config, candidates, recentTrackIds: window === 0 ? recentIds.slice(0, 1) : recentIds, rotationCursor: st.rotationCursor },
       this.rng,
     );
     if (result.nextCursor !== st.rotationCursor) await this.state.setRotationCursor(channelId, result.nextCursor);

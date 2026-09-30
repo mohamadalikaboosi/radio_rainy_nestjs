@@ -15,6 +15,10 @@ export interface ChannelRow {
   telegramLiveEnabled: boolean;
   liveStatus: LiveStatus;
   liveError: string | null;
+  /** Manual Telegram live target (URL visible, key never exposed). null = automatic (MTProto). */
+  liveRtmpUrl: string | null;
+  liveRtmpKeySet: boolean;
+  liveTargetRev: number;
   createdAt: Date;
 }
 
@@ -28,10 +32,13 @@ interface Row {
   telegram_live_enabled: boolean;
   live_status: LiveStatus;
   live_error: string | null;
+  live_rtmp_url: string | null;
+  live_rtmp_key_set: boolean;
+  live_target_rev: number;
   created_at: Date;
 }
 
-const COLS = 'telegram_channel_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, created_at';
+const COLS = 'telegram_channel_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, live_rtmp_url, (live_rtmp_key_enc IS NOT NULL) AS live_rtmp_key_set, live_target_rev, created_at';
 const map = (r: Row): ChannelRow => ({
   id: r.telegram_channel_id,
   reference: r.reference,
@@ -42,6 +49,9 @@ const map = (r: Row): ChannelRow => ({
   telegramLiveEnabled: r.telegram_live_enabled,
   liveStatus: r.live_status,
   liveError: r.live_error,
+  liveRtmpUrl: r.live_rtmp_url,
+  liveRtmpKeySet: r.live_rtmp_key_set,
+  liveTargetRev: r.live_target_rev,
   createdAt: r.created_at,
 });
 
@@ -114,6 +124,18 @@ export class ChannelRepository implements ChannelDirectory {
       [id, enabled],
     );
     return (r.rowCount ?? 0) > 0;
+  }
+
+  /** `keyEnc` is already encrypted. Both null clears the manual target. Bumps the revision so a running stream reconnects. */
+  async setLiveTarget(id: string, url: string | null, keyEnc: string | null): Promise<boolean> {
+    const r = await this.db.query('UPDATE channels SET live_rtmp_url = $2, live_rtmp_key_enc = $3, live_target_rev = live_target_rev + 1, updated_at = now() WHERE telegram_channel_id = $1', [id, url, keyEnc]);
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  async getLiveTarget(id: string): Promise<{ url: string; keyEnc: string } | null> {
+    const r = await this.db.query<{ live_rtmp_url: string | null; live_rtmp_key_enc: string | null }>('SELECT live_rtmp_url, live_rtmp_key_enc FROM channels WHERE telegram_channel_id = $1', [id]);
+    const row = r.rows[0];
+    return row?.live_rtmp_url && row.live_rtmp_key_enc ? { url: row.live_rtmp_url, keyEnc: row.live_rtmp_key_enc } : null;
   }
 
   async setLiveStatus(id: string, status: LiveStatus, error: string | null = null): Promise<void> {

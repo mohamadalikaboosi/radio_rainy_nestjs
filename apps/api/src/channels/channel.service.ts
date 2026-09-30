@@ -4,6 +4,7 @@ import { AuditService } from '../admin/audit.service';
 import { RadioBus } from '../radio/radio-bus';
 import { ActorContext } from '../radio/radio-configuration.service';
 import { TelegramGateway, TelegramNotReadyError } from '../telegram/telegram.types';
+import { SessionCipher } from '../telegram/session-cipher';
 import { ChannelRepository, ChannelRow } from './channel.repository';
 
 export const addChannelSchema = z.object({ reference: z.string().trim().min(2).max(200) });
@@ -28,6 +29,7 @@ export class ChannelService {
     private readonly bus: RadioBus,
     private readonly audit: AuditService,
     private readonly defaultRecentWindow: number,
+    private readonly liveKeyCipher?: SessionCipher,
   ) {}
 
   list(): Promise<ChannelRow[]> {
@@ -90,4 +92,40 @@ export class ChannelService {
     await this.bus.publish({ type: 'stations-changed' });
     return this.require(id);
   }
+
+  /**
+   * Manual live target: the "Server URL" and "Stream key" of Telegram's "Stream with..." screen (works like OBS, no admin rights needed
+   * for our account). A single pasted `rtmps://host/s/<key>` link is split automatically. `null` returns to the automatic (MTProto) mode.
+   */
+  async setLiveTarget(id: string, target: { url: string; key?: string } | null, ctx: ActorContext): Promise<ChannelRow> {
+    const before = await this.require(id);
+    if (!this.liveKeyCipher) throw new BadRequestException('Live target encryption is not configured');
+    if (target === null) {
+      await this.channels.setLiveTarget(id, null, null);
+    } else {
+      const parsed = parseLiveTarget(target.url, target.key);
+      await this.channels.setLiveTarget(id, parsed.url, this.liveKeyCipher.encrypt(parsed.key));
+    }
+    // The key is a secret: only whether a manual target is set (and its URL) is audited.
+    await this.audit.record({ actor: ctx.actor, action: target ? 'channel.live.target.set' : 'channel.live.target.clear', entityType: 'channel', entityId: id, before: { url: before.liveRtmpUrl }, after: { url: target ? parseLiveTarget(target.url, target.key).url : null }, requestId: ctx.requestId });
+    await this.bus.publish({ type: 'stations-changed' });
+    return this.require(id);
+  }
+}
+
+/** Splits/validates an RTMP(S) URL + key. Exported for tests. */
+export function parseLiveTarget(rawUrl: string, rawKey?: string): { url: string; key: string } {
+  let url = rawUrl.trim();
+  let key = (rawKey ?? '').trim();
+  if (!/^rtmps?:\/\/[^\s]+$/i.test(url)) throw new BadRequestException('The link must start with rtmp:// or rtmps://');
+  if (key === '') {
+    const cut = url.lastIndexOf('/');
+    const tail = url.slice(cut + 1);
+    if (cut <= url.indexOf('//') + 1 || tail === '') throw new BadRequestException('Paste the stream key too (or a full link that ends with the key)');
+    key = tail;
+    url = url.slice(0, cut + 1);
+  }
+  if (/\s/.test(key) || key.length > 300) throw new BadRequestException('Invalid stream key');
+  if (url.length > 300) throw new BadRequestException('The link is too long');
+  return { url: url.endsWith('/') ? url : `${url}/`, key };
 }
