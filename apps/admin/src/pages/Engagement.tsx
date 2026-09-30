@@ -5,6 +5,7 @@ import { mmss, timeAgo } from '../format';
 import { errorMessage, useAsync } from '../hooks';
 import { useT } from '../i18n';
 import { ActionButton, Badge, Card, ErrorBox } from '../ui';
+import { Announcements } from './Announcements';
 
 const num = (v: string, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(Number(v) || min)));
 
@@ -57,6 +58,19 @@ export function EngagementEditor({ channelId: id, title, prefix, auth }: { chann
 
       {form && (
         <form className="stack" onSubmit={(e) => void save(e)}>
+          <Card title={t('engagement.transportTitle')}>
+            <p className="muted">{t('engagement.transportHelp')}</p>
+            <div className="segmented" role="group" aria-label={t('engagement.transportTitle')}>
+              <button type="button" aria-pressed={form.audioTransport === 'HTTP'} onClick={() => set({ audioTransport: 'HTTP' })}>
+                {t('engagement.transportHttp')}
+              </button>
+              <button type="button" aria-pressed={form.audioTransport === 'WEBSOCKET'} onClick={() => set({ audioTransport: 'WEBSOCKET' })}>
+                {t('engagement.transportWs')}
+              </button>
+            </div>
+            <small className="muted">{form.audioTransport === 'HTTP' ? t('engagement.transportHttpNote') : t('engagement.transportWsNote')}</small>
+          </Card>
+
           <Card title={t('engagement.adsTitle')}>
             <p className="muted">{t('engagement.adsHelp')}</p>
             <label>
@@ -104,6 +118,8 @@ export function EngagementEditor({ channelId: id, title, prefix, auth }: { chann
           <ErrorBox error={error ?? settings.error} />
         </form>
       )}
+
+      <Announcements stationId={id} prefix={prefix} auth={auth} />
 
       <Card
         title={t('engagement.liveVote')}

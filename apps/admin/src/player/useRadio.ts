@@ -4,11 +4,13 @@ import type { VoteView } from '../api';
 import { useAsync } from '../hooks';
 import type { SponsorView } from './helpers';
 import { voterId } from './helpers';
+import { useRealtime } from './useRealtime';
 
 export interface Station {
   slug: string;
   title: string;
   live: boolean;
+  transport?: 'HTTP' | 'WEBSOCKET';
 }
 
 export interface AdOnAir {
@@ -59,19 +61,26 @@ export function useRadio() {
   const slug = picked ?? stations.data?.find((s) => s.live)?.slug ?? stations.data?.[0]?.slug ?? null;
   const base = slug ? `/radio/${slug}` : null;
 
-  const current = useAsync(() => (base ? api<Current>(`${base}/current`) : Promise.resolve(null)), [base], 1000);
+  // The live socket pushes everything; polling only runs as a safety net (slowly while connected, every second without a socket).
+  const rt = useRealtime(slug);
+  const current = useAsync(() => (base ? api<Current>(`${base}/current`) : Promise.resolve(null)), [base, rt.connected], rt.connected ? 15_000 : 1000);
   const fetchedAt = useRef(Date.now());
   useEffect(() => {
     if (current.data) fetchedAt.current = Date.now();
   }, [current.data]);
+  const pushed = rt.connected && rt.current !== null;
+  const currentData = pushed ? rt.current : current.data;
+  if (pushed) fetchedAt.current = Math.max(fetchedAt.current, rt.currentAt);
 
-  const trackId = current.data?.trackId;
+  const trackId = currentData?.trackId;
   const lyrics = useAsync(() => (base && trackId ? api<Lyrics>(`${base}/current/lyrics`) : Promise.resolve(null)), [base, trackId]);
-  const active = useAsync(() => (base && trackId ? api<ActiveLine>(`${base}/current/lyrics/active`) : Promise.resolve(null)), [base, trackId], 500);
+  // With synchronized lines the browser finds the active line itself; the server is only asked when there are none.
+  const hasLines = (lyrics.data?.lines?.length ?? 0) > 0;
+  const active = useAsync(() => (base && trackId && !hasLines ? api<ActiveLine>(`${base}/current/lyrics/active`) : Promise.resolve(null)), [base, trackId, hasLines], hasLines ? undefined : 500);
   const sponsors = useAsync(() => (base ? api<SponsorView[]>(`${base}/sponsors`) : Promise.resolve([])), [base], 60_000);
 
   const me = useRef(voterId());
-  const vote = useAsync(() => (base ? api<VoteView>(`${base}/vote`, { query: { voterId: me.current } }) : Promise.resolve(null)), [base], 4000);
+  const vote = useAsync(() => (base ? api<VoteView>(`${base}/vote`, { query: { voterId: me.current } }) : Promise.resolve(null)), [base, rt.connected], rt.connected ? 20_000 : 4000);
   const [localVote, setLocalVote] = useState<VoteView | null>(null);
   useEffect(() => setLocalVote(null), [vote.data]);
   const cast = useCallback(
@@ -82,5 +91,12 @@ export function useRadio() {
     [base],
   );
 
-  return { stations: stations.data, slug, pick: setPicked, base, current: current.data, fetchedAt, lyrics: lyrics.data, active: active.data, sponsors: sponsors.data ?? [], vote: localVote ?? vote.data, cast };
+  // The socket's vote has no "my vote" (the server does not know who I am): keep mine from the REST answers for the same poll.
+  const shared = rt.connected && rt.vote ? rt.vote : vote.data;
+  const mine = localVote?.myVote ?? vote.data?.myVote ?? null;
+  const minePoll = localVote?.poll?.id ?? vote.data?.poll?.id;
+  // Connected: the pushed tally is the freshest (my own POST is broadcast too). Otherwise the REST answers are all there is.
+  const merged: VoteView | null = rt.connected && rt.vote && shared ? { ...shared, myVote: shared.poll && shared.poll.id === minePoll ? mine : null } : (localVote ?? shared ?? null);
+
+  return { stations: stations.data, slug, pick: setPicked, base, current: currentData, fetchedAt, lyrics: lyrics.data, active: active.data, sponsors: sponsors.data ?? [], vote: merged, cast, realtime: rt };
 }

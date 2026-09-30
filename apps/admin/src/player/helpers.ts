@@ -73,3 +73,21 @@ export function voterId(): string {
     return `v${Math.random().toString(36).slice(2, 14).padEnd(12, 'x')}`;
   }
 }
+
+/** Index of the line being sung at `position` seconds (-1 before the first line / in a gap after the last). Computed in the browser: no polling. */
+export function activeLineIndex(lines: readonly { start: number; end: number }[], position: number): number {
+  let lo = 0;
+  let hi = lines.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const l = lines[mid];
+    if (!l) break;
+    if (l.start <= position) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  const line = lines[found];
+  return line && position < line.end + 1.5 ? found : -1; // a short grace after the line ends, then the gap is empty
+}

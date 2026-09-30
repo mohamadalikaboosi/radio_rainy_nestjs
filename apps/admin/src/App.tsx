@@ -209,7 +209,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Player />} />
         <Route path="/panel/*" element={<Panel />} />
-        <Route path="/portal/*" element={<PortalApp />} />
+        <Route path="/partner/*" element={<PortalApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -97,10 +97,24 @@ Every track is converted (ffmpeg) to **mono FLAC at 48 kHz** (configurable in Se
 | `GET /radio/:slug/sponsors` | active sponsors `[{id,name,tagline,ctaLabel,logoUrl,url}]` (`url` is a tracked redirect) |
 | `GET /radio/:slug/vote?voterId=` · `POST /radio/:slug/vote {voterId,hashtag}` | the running tag vote (`NONE\|OPEN\|PLAYING`) / cast a vote |
 | `GET /radio/ads/:id/image` · `/radio/sponsors/:id/logo` · `/radio/go/{ad,sponsor}/:id` | artwork and click-counting redirects |
+| `WS /radio/:slug/ws` · `WS /radio/:slug/audio` | live control channel / optional WebSocket audio (see below) |
 | `GET /metrics` | Prometheus metrics (needs `METRICS_TOKEN`, see `docs/PLAYBACK.md`) |
 
 `/radio/:slug/current` returns `status: "AD"` with an `ad` object while an audio ad is on air.
 The unprefixed `/radio/stream`, `/radio/current`, … remain and serve the default station (first started channel).
+
+### Live sockets and the audio transport
+
+* **`/radio/:slug/ws`** – a read-only WebSocket per listener: on connect a `hello` (what is on air, the vote, announcements, listener/client counts, the station's audio transport), then pushes `current` (track/ad changed), `vote`, `messages`, `counts`. The page no longer polls while it is connected (a slow safety-net poll remains) and finds the active lyric line itself from the server clock.
+* **Redis pub/sub** feeds it: the leader engine, the tag vote and the announcement endpoints publish tiny "something changed" hints (`radio_rainy:realtime`); every instance builds the message from the database for the sockets *it* holds, so a listener can connect to any instance, nothing is computed for a station nobody watches, and each instance announces how many sockets it holds so `clients` is the sum over instances.
+* **Announcements** – the operator (and a station owner for their station) posts a message that appears on every listener's screen immediately and expires by itself (panel → *Tag vote, transport & announcements*).
+* **Audio transport (per station, panel → Engagement)**: **HTTP MP3** (default, recommended) or **WebSocket**. The WebSocket mode is `/radio/:slug/audio`: the *same* shared stream (one download, one ffmpeg) as binary frames into the browser's Media Source. Browsers without MSE for MP3 (e.g. iPhone) and any failure fall back to HTTP automatically; the HTTP URL keeps working for other apps in both modes. Only the leader instance can serve audio sockets.
+
+### Customer portal, campaigns and billing (free by default)
+
+Customers sign up at **`/partner`** (separate session from the operator panel). Advertisers create campaigns (audio, optional image/link, station, dates, play cap) → **the operator approves** (*Campaign review*) → they play between tracks and show their stats. Operators can give a station to an account (*Channels → Owner*): the owner sees listeners/plays and can change the station's engagement settings and post announcements.
+
+**Billing is OFF by default** (panel → *Billing & access*): nothing is charged, limited or blocked for money. Turn it on later and per-play / per-click prices apply against each account's credit (ledger; the operator adds credit manually, a payment gateway can be plugged in behind `addLedger`); an account without credit stops airing by itself. Also switchable there: open sign-up, mandatory approval, max campaigns per account.
 
 ### Player (PWA) and languages
 

@@ -113,3 +113,12 @@
 .pl-sponsor-text { display: flex; flex-direction: column; flex: 1 1 10rem; min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) { .pl-art.spin { animation: none; } .pl-bg, .pl-progress > div, .pl-vote-bar { transition: none; } }
+
+.pl-meta { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
+.pl-chip-mini { font-size: .78rem; color: var(--pl-dim); background: var(--pl-glass); border: 1px solid var(--pl-line); border-radius: 999px; padding: .15rem .6rem; }
+.pl-messages { display: flex; flex-direction: column; gap: .5rem; max-width: 1080px; margin: 0 auto .75rem; padding: 0 1rem; }
+.pl-message { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .7rem 1rem; border-radius: 14px; background: hsl(var(--pl-hue, 230) 70% 35% / .55); border: 1px solid var(--pl-line); backdrop-filter: blur(12px); animation: pl-in .3s ease; }
+.pl-message.warn { background: hsl(38 85% 32% / .7); }
+.pl-x { font: inherit; font-size: 1.3rem; line-height: 1; color: var(--pl-ink); background: none; border: 0; cursor: pointer; padding: 0 .25rem; }
+@keyframes pl-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pl-message { animation: none; } }

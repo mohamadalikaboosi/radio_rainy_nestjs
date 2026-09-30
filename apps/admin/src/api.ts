@@ -303,6 +303,7 @@ export interface EngagementSettings {
   tagVotePlayMinutes: number;
   tagVoteOptions: number;
   tagVoteAllowlist: string[];
+  audioTransport: 'HTTP' | 'WEBSOCKET';
 }
 export interface VoteView {
   status: 'NONE' | 'OPEN' | 'PLAYING';

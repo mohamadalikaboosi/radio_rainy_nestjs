@@ -108,11 +108,11 @@ export function PortalApp() {
         <div className="picker">
           <LanguageSwitcher />
         </div>
-        <NavLink to="/portal" end>
+        <NavLink to="/partner" end>
           {t('portal.nav.campaigns')}
         </NavLink>
-        <NavLink to="/portal/billing">{t('portal.nav.billing')}</NavLink>
-        <NavLink to="/portal/stations">{t('portal.nav.stations')}</NavLink>
+        <NavLink to="/partner/billing">{t('portal.nav.billing')}</NavLink>
+        <NavLink to="/partner/stations">{t('portal.nav.stations')}</NavLink>
       </nav>
       <div className="main-col">
         <header className="topbar">
@@ -138,7 +138,7 @@ export function PortalApp() {
             <Route index element={<PortalCampaigns me={me.data} />} />
             <Route path="billing" element={<PortalBilling />} />
             <Route path="stations" element={<PortalStations />} />
-            <Route path="*" element={<Navigate to="/portal" replace />} />
+            <Route path="*" element={<Navigate to="/partner" replace />} />
           </Routes>
         </div>
       </div>

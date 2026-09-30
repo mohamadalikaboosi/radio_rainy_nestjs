@@ -54,6 +54,14 @@ MP3 frames of consecutive tracks are simply concatenated on the shared timeline.
 | LL-HLS | 3–6 s | segmenting/ playlists/ more moving parts for higher latency |
 | WebRTC | < 1 s | needs SFU/media server, NAT traversal; unnecessary for radio, poor fit for shared music |
 
+## Audio over WebSocket (optional, per station)
+
+The default is HTTP chunked MP3. A station can instead be switched (panel → Engagement) to **binary WebSocket frames** (`/radio/:slug/audio`). The server side is one more `ListenerSink` on the same `Broadcaster` (so still one download and one ffmpeg; the ring buffer gives the same instant start; a socket whose send queue exceeds 512 KiB is dropped like a slow HTTP listener). In the browser the frames are appended to a `MediaSource` `SourceBuffer('audio/mpeg')` (`sequence` mode), old audio is trimmed, and if more than 4 s is buffered ahead the playhead jumps to the live edge.
+
+It is **not** recommended as the default: `<audio>` over HTTP already gives native buffering, background playback and lock-screen controls, works behind any proxy/CDN and on iPhone (which has no MSE for MP3), and WebSocket adds no latency advantage (both are TCP). The player therefore falls back to HTTP automatically when MSE/MP3 is unavailable, when the socket closes (e.g. `1013` on a non-leader instance) or an append fails, and does not retry WebSocket in that session.
+
+The WebSocket **control channel** (`/radio/:slug/ws`) is separate and always on: it carries state, counts and announcements, never audio.
+
 ## Failure handling
 
 | Failure | Behaviour |

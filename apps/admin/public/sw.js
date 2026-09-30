@@ -19,7 +19,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-const isApi = (url) => url.pathname.startsWith('/radio') || url.pathname.startsWith('/admin') || url.pathname.startsWith('/metrics');
+const isApi = (url) => url.pathname.startsWith('/radio') || url.pathname.startsWith('/admin') || url.pathname.startsWith('/portal') || url.pathname.startsWith('/metrics');
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;

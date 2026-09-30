@@ -39,7 +39,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('customer portal', () => {
   it('shows the FREE note, lets a new customer sign up, and keeps the token in its own store', async () => {
-    render(<MemoryRouter initialEntries={['/portal']}><Routes><Route path="/portal/*" element={<PortalApp />} /></Routes></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/partner']}><Routes><Route path="/partner/*" element={<PortalApp />} /></Routes></MemoryRouter>);
     expect(await screen.findByText(/Free during launch/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Sign up' }));
     fireEvent.change(screen.getByLabelText('Company / account name'), { target: { value: 'Acme' } });
@@ -63,7 +63,7 @@ describe('customer portal', () => {
     beforeEach(() => portalStore.set('portal-token'));
 
     it('lists campaigns with their status, stats and the actions that fit the status; sends the portal token', async () => {
-      render(<MemoryRouter initialEntries={['/portal']}><Routes><Route path="/portal/*" element={<PortalApp />} /></Routes></MemoryRouter>);
+      render(<MemoryRouter initialEntries={['/partner']}><Routes><Route path="/partner/*" element={<PortalApp />} /></Routes></MemoryRouter>);
       expect(await screen.findByText('Spring')).toBeInTheDocument();
       expect(screen.getByText('draft')).toBeInTheDocument();
       expect(screen.getByText(/4 plays/)).toBeInTheDocument();
@@ -75,14 +75,14 @@ describe('customer portal', () => {
     it('shows the reviewer\'s reason for a rejected campaign, and that an approved one needs credit when billing is on', async () => {
       platform = { ...free, billingEnabled: true, pricePerPlayCents: 500 }; // credit is 100 < 500
       campaigns = [campaign({ id: 'r', name: 'Bad', status: 'REJECTED', reviewNote: 'Audio too loud' }), campaign({ id: 'p', name: 'Good', status: 'APPROVED' })];
-      render(<MemoryRouter initialEntries={['/portal']}><Routes><Route path="/portal/*" element={<PortalApp />} /></Routes></MemoryRouter>);
+      render(<MemoryRouter initialEntries={['/partner']}><Routes><Route path="/partner/*" element={<PortalApp />} /></Routes></MemoryRouter>);
       expect(await screen.findByText('Audio too loud')).toBeInTheDocument();
       expect(await screen.findByText('Not airing: add credit')).toBeInTheDocument();
       expect(screen.getByText(/pay-per-use/)).toBeInTheDocument();
     });
 
     it('creates a campaign aimed at a station, with dates and a play cap', async () => {
-      render(<MemoryRouter initialEntries={['/portal']}><Routes><Route path="/portal/*" element={<PortalApp />} /></Routes></MemoryRouter>);
+      render(<MemoryRouter initialEntries={['/partner']}><Routes><Route path="/partner/*" element={<PortalApp />} /></Routes></MemoryRouter>);
       await screen.findByText('Spring');
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Summer' } });
       await screen.findByRole('option', { name: 'Chan' });

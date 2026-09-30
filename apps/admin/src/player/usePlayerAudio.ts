@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { WsAudioPlayer, wsAudioSupported } from './ws-audio';
 
 interface WebkitWindow extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -8,9 +9,13 @@ interface WebkitWindow extends Window {
  * The <audio> element of the radio + a Web Audio analyser for the equalizer.
  * Pausing drops the source so that playing again joins the live edge instead of resuming stale buffered audio.
  */
-export function usePlayerAudio(streamUrl: string | null) {
+export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HTTP' | 'WEBSOCKET' | null; audioSocketUrl?: string | null } = {}) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
+  /** What is actually delivering the audio right now (WEBSOCKET falls back to HTTP by itself when the browser/server can't do it). */
+  const [active, setActive] = useState<'HTTP' | 'WEBSOCKET'>('HTTP');
+  const wsPlayer = useRef<WsAudioPlayer | null>(null);
+  const wsBroken = useRef(false);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const [error, setError] = useState(false);
@@ -40,23 +45,45 @@ export function usePlayerAudio(streamUrl: string | null) {
   const stop = useCallback((): void => {
     const el = audio.current;
     if (!el) return;
+    wsPlayer.current?.stop();
+    wsPlayer.current = null;
     el.pause();
     el.removeAttribute('src');
     el.load();
     setPlaying(false);
   }, []);
 
-  const play = useCallback((): void => {
-    const el = audio.current;
-    if (!el || !streamUrl) return;
-    setError(false);
-    ensureAnalyser(el);
+  const playHttp = useCallback((el: HTMLAudioElement): void => {
+    if (!streamUrl) return;
+    setActive('HTTP');
     el.src = `${streamUrl}?ts=${Date.now()}`;
     void el.play().then(() => setPlaying(true)).catch(() => {
       setPlaying(false);
       setError(true);
     });
-  }, [streamUrl, ensureAnalyser]);
+  }, [streamUrl]);
+
+  const play = useCallback((): void => {
+    const el = audio.current;
+    if (!el || !streamUrl) return;
+    setError(false);
+    ensureAnalyser(el);
+    if (opts.transport === 'WEBSOCKET' && opts.audioSocketUrl && !wsBroken.current && wsAudioSupported()) {
+      setActive('WEBSOCKET');
+      const p = new WsAudioPlayer(el, opts.audioSocketUrl, () => {
+        // not supported / closed / failed: keep listening over plain HTTP instead (and don't retry WebSocket this session)
+        wsBroken.current = true;
+        wsPlayer.current = null;
+        playHttp(el);
+      });
+      wsPlayer.current = p;
+      void p.start().then(() => {
+        if (wsPlayer.current === p) setPlaying(true);
+      });
+      return;
+    }
+    playHttp(el);
+  }, [streamUrl, opts.transport, opts.audioSocketUrl, ensureAnalyser, playHttp]);
 
   const toggle = useCallback((): void => (playing ? stop() : play()), [playing, play, stop]);
 
@@ -81,7 +108,7 @@ export function usePlayerAudio(streamUrl: string | null) {
 
   useEffect(() => () => void ctx.current?.close().catch(() => undefined), []);
 
-  return { audio, playing, analyser, error, toggle, stop, play };
+  return { audio, playing, analyser, error, toggle, stop, play, active };
 }
 
 /** Lock-screen / headset controls and metadata (Media Session API). */

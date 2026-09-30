@@ -52,11 +52,15 @@ describe('<Player />', () => {
   });
 
   it('shows the synchronized lyrics (and no equalizer) when they exist', async () => {
-    world.lyrics = { trackId: 't1', status: 'READY', lines: [{ start: 0, end: 5, text: 'first' }, { start: 5, end: 10, text: 'second' }] };
+    world.lyrics = { trackId: 't1', status: 'READY', lines: [{ start: 0, end: 5, text: 'first' }, { start: 28, end: 34, text: 'second' }] }; // the track started 30 s ago: the browser finds 'second' itself
     render(<Player />);
     expect(await screen.findByText('second')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('second')).toHaveClass('active'));
     expect(screen.queryByTestId('equalizer')).not.toBeInTheDocument();
+    const polls = (): number => calls.filter((c) => c.url.includes('/current/lyrics/active')).length;
+    const before = polls();
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(polls()).toBe(before); // once the lines are known there is no per-line polling (the 500 ms poll would have fired twice)
   });
 
   it('plain (unsynchronized) lyrics appear under the equalizer', async () => {

@@ -4,11 +4,13 @@ import { mmss } from '../format';
 import { LanguageSwitcher, useT } from '../i18n';
 import { Equalizer } from './Equalizer';
 import './player.css';
-import { hueOf, pickSponsor, secondsSince, secondsUntil } from './helpers';
+import { activeLineIndex, hueOf, pickSponsor, secondsSince, secondsUntil } from './helpers';
 import type { SponsorView } from './helpers';
 import type { AdOnAir, Current } from './useRadio';
 import { useRadio } from './useRadio';
+import { wsUrl } from './useRealtime';
 import { useInstallPrompt, useMediaSession, usePlayerAudio } from './usePlayerAudio';
+import type { LiveMessage } from './useRealtime';
 
 /** A ticking "now" so countdowns / progress move smoothly between the 1 s polls. */
 function useNow(ms = 250): number {
@@ -148,7 +150,9 @@ function Lyrics({ c, lyrics, activeIndex, analyser, playing }: { c: Current | nu
 export function Player() {
   const t = useT();
   const r = useRadio();
-  const { audio, playing, analyser, error, toggle, stop, play } = usePlayerAudio(r.base ? `${r.base}/stream` : null);
+  const transport = r.realtime.transport ?? r.stations?.find((s) => s.slug === r.slug)?.transport ?? 'HTTP';
+  const { audio, playing, analyser, error, toggle, stop, play, active: activeTransport } = usePlayerAudio(r.base ? `${r.base}/stream` : null, { transport, audioSocketUrl: r.slug ? wsUrl(`/radio/${r.slug}/audio`) : null });
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const install = useInstallPrompt();
   const now = useNow();
   const c = r.current;
@@ -171,6 +175,10 @@ export function Player() {
   const serverTime = c?.serverTime ?? new Date(now).toISOString();
   const fetchedAt = r.fetchedAt.current;
   const position = onAir && c?.startedAt ? Math.min(c.duration ?? Infinity, secondsSince(c.startedAt, serverTime, fetchedAt, now)) : 0;
+  const lines = r.lyrics?.lines;
+  // the browser finds the active line from the server clock: no per-line polling
+  const activeIndex = lines && lines.length > 0 && onAir ? activeLineIndex(lines, position) : (r.active?.index ?? -1);
+  const visibleMessages = r.realtime.messages.filter((m) => !dismissed.has(m.id));
   const switchStation = useCallback((slug: string): void => {
     stop();
     r.pick(slug);
@@ -187,7 +195,7 @@ export function Player() {
               ⬇ {t('player.install')}
             </button>
           )}
-          <a className="pl-chip" href="/portal">
+          <a className="pl-chip" href="/partner">
             {t('player.advertise')}
           </a>
           <LanguageSwitcher className="pl-chip pl-select" />
@@ -203,6 +211,19 @@ export function Player() {
           )}
         </div>
       </header>
+
+      {visibleMessages.length > 0 && (
+        <div className="pl-messages" role="region" aria-label={t('player.announcements')}>
+          {visibleMessages.map((m: LiveMessage) => (
+            <div key={m.id} className={`pl-message ${m.level === 'WARN' ? 'warn' : ''}`} role="status">
+              <span>{m.text}</span>
+              <button className="pl-x" aria-label={t('player.dismiss')} onClick={() => setDismissed((d) => new Set(d).add(m.id))}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <main className="pl-main">
         <section className="pl-stage">
@@ -235,11 +256,16 @@ export function Player() {
             <span>{playing ? t('player.pause') : t('player.listenLive')}</span>
           </button>
           {error && <p className="pl-error" role="alert">{t('player.streamError')}</p>}
+          <div className="pl-meta" data-testid="live-meta">
+            {r.realtime.listeners !== null && <span className="pl-chip-mini">👥 {t('player.listening', { n: r.realtime.listeners })}</span>}
+            {r.realtime.clients !== null && r.realtime.clients > 0 && <span className="pl-chip-mini">🟢 {t('player.online', { n: r.realtime.clients })}</span>}
+            {playing && <span className="pl-chip-mini" title={t('player.transportHint')}>{activeTransport === 'WEBSOCKET' ? t('player.viaSocket') : t('player.viaHttp')}</span>}
+          </div>
           <audio ref={audio} preload="none" />
         </section>
 
         <section className="pl-side">
-          {!isAd && <Lyrics c={c} lyrics={r.lyrics} activeIndex={r.active?.index ?? -1} analyser={analyser} playing={playing} />}
+          {!isAd && <Lyrics c={c} lyrics={r.lyrics} activeIndex={activeIndex} analyser={analyser} playing={playing} />}
           {isAd && (
             <div className="pl-eq-wrap">
               <Equalizer analyser={analyser} playing={playing} />

@@ -6,6 +6,6 @@ const target = process.env.API_URL ?? 'http://localhost:3000';
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173, proxy: { '/admin': target, '/radio': target } },
+  server: { port: 5173, proxy: { '/admin': target, '/portal': target, '/metrics': target, '/radio': { target, ws: true } } },
   test: { environment: 'jsdom', globals: true, setupFiles: ['./src/test-setup.ts'] },
 });

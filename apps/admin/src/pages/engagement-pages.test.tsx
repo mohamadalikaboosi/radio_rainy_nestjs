@@ -12,7 +12,7 @@ const calls: { url: string; method: string; body?: unknown; contentType?: string
 const json = (data: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => data }) as Response;
 
 const ad = { id: 'a1', channelId: null, name: 'Coffee', weight: 2, enabled: true, linkUrl: null, ctaLabel: null, hasAudio: false, audioMime: null, audioSize: null, durationSeconds: null, hasImage: false, plays: 3, clicks: 1, lastPlayedAt: null, createdAt: new Date().toISOString() };
-const settings = { adsEveryNTracks: 3, tagVoteEnabled: true, tagVoteIntervalMinutes: 60, tagVotePollMinutes: 3, tagVotePlayMinutes: 20, tagVoteOptions: 3, tagVoteAllowlist: ['rock'] };
+const settings = { adsEveryNTracks: 3, tagVoteEnabled: true, tagVoteIntervalMinutes: 60, tagVotePollMinutes: 3, tagVotePlayMinutes: 20, tagVoteOptions: 3, tagVoteAllowlist: ['rock'], audioTransport: 'HTTP' };
 
 beforeEach(() => {
   calls.length = 0;
@@ -21,6 +21,7 @@ beforeEach(() => {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
     calls.push({ url, method: init?.method ?? 'GET', body, contentType: headers['Content-Type'] });
+    if (url.includes('/messages') && (init?.method ?? 'GET') === 'GET') return json([{ id: 'm1', text: 'Old announcement', level: 'INFO', createdAt: new Date().toISOString(), expiresAt: new Date().toISOString(), createdBy: 'admin' }]);
     if (url.startsWith('/admin/channels') && !url.includes('/engagement') && !url.includes('/tag-votes') && !url.includes('live-target')) return json([channel]);
     if (url.includes('/engagement')) return json(settings);
     if (url.includes('/tag-votes')) return json({ current: { status: 'NONE', serverTime: new Date().toISOString() }, history: [] });
@@ -116,5 +117,29 @@ describe('Engagement page', () => {
     await waitFor(() => expect(calls.find((c) => c.method === 'PUT')?.body).toMatchObject({ adsEveryNTracks: 5, tagVoteEnabled: true, tagVoteAllowlist: ['rock', '#jazz', 'chill'] }));
     fireEvent.click(await screen.findByRole('button', { name: 'Start a vote now' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/tag-votes/start'))).toBe(true));
+  });
+
+  it('lets the operator choose how the audio reaches listeners (HTTP / WebSocket) per station', async () => {
+    wrap(<Engagement />);
+    const http = await screen.findByRole('button', { name: /HTTP MP3/ });
+    expect(http).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'WebSocket' }));
+    expect(screen.getByRole('button', { name: 'WebSocket' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/fall back to HTTP automatically/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/engagement'))?.body).toMatchObject({ audioTransport: 'WEBSOCKET' }));
+  });
+
+  it('posts a live announcement and can remove an active one', async () => {
+    wrap(<Engagement />);
+    expect(await screen.findByText('Old announcement')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Concert tonight!' } });
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'WARN' } });
+    fireEvent.change(screen.getByLabelText('Show for (minutes)'), { target: { value: '45' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send now' }));
+    await waitFor(() => expect(calls.find((c) => c.method === 'POST' && c.url.endsWith('/messages'))?.body).toEqual({ text: 'Concert tonight!', level: 'WARN', minutes: 45 }));
+    const row = screen.getByText('Old announcement').closest('li') as HTMLElement;
+    fireEvent.click(row.querySelector('button') as HTMLButtonElement);
+    await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/messages/m1'))).toBe(true));
   });
 });
