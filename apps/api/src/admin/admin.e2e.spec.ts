@@ -434,6 +434,106 @@ describe('Super Admin API (e2e)', () => {
     });
   });
 
+  describe('reports, live control and queue-next', () => {
+    let ta = '';
+    let tb = '';
+    beforeAll(async () => {
+      ta = ids.A ?? '';
+      tb = ids.B ?? '';
+      // history: A played 3x (1 skipped), B played 1x (error); plus an old row outside the 24h window
+      const ins = (track: string, minsAgo: number, dur: number, reason: string | null) =>
+        db.query(`INSERT INTO playback_history (track_id, started_at, ended_at, end_reason) VALUES ($1, now() - ($2 || ' minutes')::interval, CASE WHEN $4::text IS NULL THEN NULL ELSE now() - ($2 || ' minutes')::interval + ($3 || ' seconds')::interval END, $4)`, [track, String(minsAgo), String(dur), reason]);
+      await ins(ta, 300, 200, 'FINISHED');
+      await ins(ta, 200, 60, 'SKIPPED');
+      await ins(ta, 100, 200, 'FINISHED');
+      await ins(tb, 50, 5, 'ERROR');
+      await ins(ta, 60 * 24 * 10, 200, 'FINISHED'); // 10 days ago: only in 30d/90d
+      await db.query(`INSERT INTO listener_samples (channel_id, at, listeners) VALUES (1001, now() - interval '30 minutes', 4), (1001, now() - interval '29 minutes', 8), (1001, now() - interval '28 minutes', 0)`);
+    });
+
+    it('summary: plays, airtime, outcomes, rates and audience for the chosen period', async () => {
+      const r = (await http().get('/admin/reports?range=24h').set(auth()).expect(200)).body;
+      expect(r.summary).toMatchObject({ plays: 4, uniqueTracks: 2, outcomes: { finished: 2, skipped: 1, admin: 0, errors: 1 } });
+      expect(r.summary.airtimeSeconds).toBe(200 + 60 + 200 + 5);
+      expect(r.summary.skipRate).toBeCloseTo(0.25);
+      expect(r.summary.errorRate).toBeCloseTo(0.25);
+      expect(r.summary.audience).toMatchObject({ peakListeners: 8, averageListeners: 4 });
+      const wide = (await http().get('/admin/reports?range=30d').set(auth())).body;
+      expect(wide.summary.plays).toBe(5); // the 10-day-old play appears in a longer window
+    });
+
+    it('timeseries has one point per bucket (24h => hourly, 30d => daily) with plays and listeners', async () => {
+      const day = (await http().get('/admin/reports?range=24h').set(auth())).body.timeseries;
+      expect(day.bucket).toBe('hour');
+      expect(day.points.length).toBeGreaterThanOrEqual(24);
+      expect(day.points.reduce((s: number, p: { plays: number }) => s + p.plays, 0)).toBe(4);
+      expect(day.points.some((p: { peakListeners: number }) => p.peakListeners === 8)).toBe(true);
+      const month = (await http().get('/admin/reports?range=30d').set(auth())).body.timeseries;
+      expect(month.bucket).toBe('day');
+      expect(month.points.length).toBeGreaterThanOrEqual(30);
+    });
+
+    it('top tracks / artists / hashtags, lyrics quality and library health', async () => {
+      const r = (await http().get('/admin/reports?range=24h').set(auth())).body;
+      expect(r.top.tracks[0]).toMatchObject({ title: 'Song A', plays: 3, skips: 1 });
+      expect(r.top.artists[0]).toMatchObject({ artist: 'Artist', plays: 4 });
+      expect(r.top.hashtags.map((h: { hashtag: string }) => h.hashtag)).toEqual(expect.arrayContaining(['rain', 'night']));
+      expect(r.lyrics.byStatus.find((x: { status: string }) => x.status === 'LYRICS_FAILED')?.tracks).toBe(1);
+      expect(r.lyrics.coverage.withUrl).toBeGreaterThanOrEqual(3);
+      expect(r.library.channels[0]).toMatchObject({ id: '1001', tracks: 5 });
+      expect(r.library.problemTracks.map((t: { title: string }) => t.title)).toContain('Song B'); // lyrics failed
+      expect(r.library.recentErrors[0]).toMatchObject({ title: 'Song B' });
+    });
+
+    it('channel filter isolates a station; validation rejects bad input', async () => {
+      const none = (await http().get('/admin/reports?range=24h&channel=999').set(auth()).expect(200)).body;
+      expect(none.summary.plays).toBe(0);
+      expect(none.top.tracks).toEqual([]);
+      await http().get('/admin/reports?range=1y').set(auth()).expect(400);
+      await http().get('/admin/reports?channel=abc').set(auth()).expect(400);
+    });
+
+    it('system health: database, telegram, queues, integrations', async () => {
+      const s = (await http().get('/admin/reports/system').set(auth()).expect(200)).body;
+      expect(s.database.ok).toBe(true);
+      expect(s.process.uptimeSeconds).toBeGreaterThanOrEqual(0);
+      expect(s.telegram.state).toBeDefined();
+      expect(s.queues).toHaveProperty('lyrics-fetch');
+      expect(s.integrations).toHaveProperty('audioCache');
+      expect(Array.isArray(s.stations)).toBe(true);
+    });
+
+    it('CSV export (plays and tracks) is valid, escaped and honours the range', async () => {
+      await db.query(`UPDATE tracks SET title = 'Song "A", the best' WHERE id = $1`, [ta]);
+      const plays = await http().get('/admin/reports/export.csv?type=plays&range=24h').set(auth()).expect(200);
+      expect(plays.headers['content-type']).toContain('text/csv');
+      const lines = plays.text.replace(/^\uFEFF/, '').trim().split('\r\n');
+      expect(lines[0]).toBe('started_at,ended_at,channel,track_id,title,artist,seconds,outcome');
+      expect(lines).toHaveLength(1 + 4);
+      expect(plays.text).toContain('"Song ""A"", the best"');
+      const tracks = await http().get('/admin/reports/export.csv?type=tracks').set(auth()).expect(200);
+      expect(tracks.text.trim().split('\r\n').length).toBeGreaterThanOrEqual(1 + 5);
+      await db.query(`UPDATE tracks SET title = 'Song A' WHERE id = $1`, [ta]);
+    });
+
+    it('live snapshot: per station now-playing/up-next/recent; queue-next validates and is audited', async () => {
+      const live = (await http().get('/admin/live').set(auth()).expect(200)).body;
+      const st = live.stations.find((x: { id: string }) => x.id === '1001');
+      expect(st).toMatchObject({ id: '1001', slug: 'chan', streamUrl: '/radio/chan/stream', listeners: 0 });
+      expect(Array.isArray(st.recent)).toBe(true);
+      expect(typeof live.serverTime).toBe('string');
+
+      await http().post(`/admin/channels/${CH}/radio/queue-next`).set(auth()).send({ trackId: ta }).expect(202);
+      await http().post(`/admin/channels/${CH}/radio/queue-next`).set(auth()).send({ trackId: '00000000-0000-0000-0000-000000000000' }).expect(404);
+      await http().post(`/admin/channels/${CH}/radio/queue-next`).set(auth()).send({}).expect(400);
+      await db.query('UPDATE tracks SET enabled = false WHERE id = $1', [tb]);
+      await http().post(`/admin/channels/${CH}/radio/queue-next`).set(auth()).send({ trackId: tb }).expect(400);
+      await db.query('UPDATE tracks SET enabled = true WHERE id = $1', [tb]);
+      const audit = await db.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'radio.queue-next'`);
+      expect((audit.rows[0] as { n: number }).n).toBe(1);
+    });
+  });
+
   it('audit log lists newest first and paginates', async () => {
     const a = (await http().get('/admin/audit?limit=5').set(auth()).expect(200)).body;
     expect(a.items).toHaveLength(5);

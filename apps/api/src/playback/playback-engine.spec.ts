@@ -208,6 +208,29 @@ describe('PlaybackEngine', () => {
     await waitFor(async () => (await h.state.get('1001')).status === 'PLAYING', 12000);
   });
 
+  it('queueNext plays the chosen track after the current one FINISHES (no cut) and shows it as "next"', async () => {
+    for (const i of [1, 2, 3]) addTrack(gw, i);
+    await discovery.sync('1001');
+    const target = (await db.query<{ id: string }>(`SELECT id FROM tracks WHERE telegram_message_id = 3`)).rows[0]?.id ?? '';
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const slowH = buildHarness(db, gw, { burstSeconds: 0, ...{ sleep: gatedSleep(gate) } }, 4);
+    extra.push(slowH);
+    slowH.engine.start();
+    await waitFor(() => slowH.engine.current !== null);
+    const first = slowH.engine.current?.track.id;
+    const firstSeq = slowH.engine.current?.seq ?? 0;
+    slowH.engine.queueNext(target);
+    await waitFor(async () => (await slowH.state.get('1001')).nextTrackId === target);
+    expect(slowH.engine.current?.track.id).toBe(first); // still playing the same track
+    release();
+    await waitFor(() => slowH.engine.current !== null && slowH.engine.current.seq > firstSeq);
+    expect(slowH.engine.current?.track.id).toBe(target);
+    await slowH.engine.stop();
+    const firstRow = (await db.query<{ end_reason: string }>(`SELECT end_reason FROM playback_history ORDER BY started_at, id LIMIT 1`)).rows[0];
+    expect(firstRow?.end_reason).toBe('FINISHED'); // it was not cut
+  });
+
   it('radio disabled -> STOPPED', async () => {
     addTrack(gw, 1);
     await discovery.sync('1001');

@@ -5,6 +5,8 @@ import { z } from 'zod';
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('skip'), channelId: z.string(), expectedSeq: z.number().int().optional() }),
   z.object({ type: z.literal('play-next'), channelId: z.string(), trackId: z.string().uuid().optional() }),
+  /** Plays this track right after the current one finishes (no cut). */
+  z.object({ type: z.literal('queue-next'), channelId: z.string(), trackId: z.string().uuid() }),
   z.object({ type: z.literal('config-changed'), channelId: z.string() }),
   z.object({ type: z.literal('wake'), channelId: z.string() }),
   /** Stations were added/removed/started/stopped or live streaming toggled: the leader reconciles. */

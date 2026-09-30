@@ -39,6 +39,17 @@ export class RadioControlService {
     return { accepted: true };
   }
 
+  /** Play `trackId` after the current track ends (unlike play-next it does not cut the current one). */
+  async queueNext(channelId: string, trackId: string, ctx: ActorContext): Promise<{ accepted: true }> {
+    const t = await this.tracks.findById(trackId);
+    if (!t) throw new NotFoundException('Track not found');
+    if (t.telegramChannelId !== channelId) throw new BadRequestException('Track belongs to another channel');
+    if (t.status !== 'READY' || !t.enabled) throw new BadRequestException('Track is not playable (disabled, failed or unavailable)');
+    await this.bus.publish({ type: 'queue-next', channelId, trackId });
+    await this.audit.record({ actor: ctx.actor, action: 'radio.queue-next', entityType: 'radio', entityId: channelId, after: { trackId, title: t.title }, requestId: ctx.requestId });
+    return { accepted: true };
+  }
+
   historyList(channelId: string, limit: number): ReturnType<PlaybackHistoryRepository['list']> {
     return this.history.list(channelId, limit);
   }

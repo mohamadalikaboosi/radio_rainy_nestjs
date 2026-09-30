@@ -1,4 +1,4 @@
-import { BadRequestException, Body, GatewayTimeoutException, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, GatewayTimeoutException, Res, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { TimeoutError } from '../common/timeout';
 import { ZodPipe } from '../common/zod.pipe';
@@ -9,6 +9,10 @@ import { ActorContext, ConfigUpdate, configUpdateSchema, PreviewRequest, preview
 import { TelegramClientManager } from '../telegram/telegram-client.manager';
 import { maskPhone } from '../telegram/telegram-session.store';
 import { AdminAuthService } from './admin-auth.service';
+import type { Response } from 'express';
+import { LiveService } from './live.service';
+import { ReportQuery, reportQuerySchema, ReportsService } from './reports.service';
+import { SystemReportService } from './system-report.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
 import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
@@ -248,6 +252,13 @@ export class AdminRadioController {
     return this.config.preview(await this.ch(id), body);
   }
 
+  /** Plays `trackId` when the current track ends (does not cut it). */
+  @Post('queue-next')
+  @HttpCode(202)
+  async queueNext(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ trackId: z.string().uuid() }))) body: { trackId: string }, @Req() req: AdminRequest) {
+    return this.control.queueNext(await this.ch(id), body.trackId, ctxOf(req));
+  }
+
   @Post('skip')
   @HttpCode(202)
   async skip(@Param('channelId', ChannelIdPipe) id: string, @Body(new ZodPipe(z.object({ expectedSeq: z.number().int().optional() }).default({}))) body: { expectedSeq?: number }, @Req() req: AdminRequest) {
@@ -318,5 +329,43 @@ export class AdminChannelsController {
     await this.queue.enqueueTelegramSync({ channelId: id, full: body.full });
     await this.audit.record({ actor: req.admin.email, action: 'telegram.sync', entityType: 'channel', entityId: id, after: body, requestId: ctxOf(req).requestId });
     return { queued: true, full: body.full };
+  }
+}
+
+
+/** What is on air right now for every station (poll every second). */
+@Controller('admin/live')
+@UseGuards(AdminGuard)
+export class AdminLiveController {
+  constructor(private readonly live: LiveService) {}
+
+  @Get()
+  snapshot() {
+    return this.live.snapshot();
+  }
+}
+
+@Controller('admin/reports')
+@UseGuards(AdminGuard)
+export class AdminReportsController {
+  constructor(private readonly reports: ReportsService, private readonly system: SystemReportService) {}
+
+  @Get()
+  all(@Query(new ZodPipe(reportQuerySchema)) q: ReportQuery) {
+    return this.reports.all(q);
+  }
+
+  @Get('system')
+  systemHealth() {
+    return this.system.get();
+  }
+
+  @Get('export.csv')
+  async exportCsv(@Query(new ZodPipe(reportQuerySchema.extend({ type: z.enum(['plays', 'tracks']).default('plays') }))) q: ReportQuery & { type: 'plays' | 'tracks' }, @Res() res: Response): Promise<void> {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="radio_rainy_${q.type}_${q.range}.csv"`);
+    res.write('\uFEFF'); // BOM so Excel opens Persian text correctly
+    for await (const line of this.reports.exportCsv(q.type, q)) if (!res.write(line)) await new Promise<void>((r) => res.once('drain', r));
+    res.end();
   }
 }

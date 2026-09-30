@@ -17,10 +17,17 @@ import { TelegramTrackDiscovery } from '../telegram/track-discovery';
 import { TrackRepository } from '../track/track.repository';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminGuard } from './admin.guard';
-import { AdminAuthController, AdminChannelsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
+import { AdminAuthController, AdminChannelsController, AdminLiveController, AdminReportsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
 import { AdminLanguageController, AdminSettingsController } from './settings-language.controllers';
 import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
+import { LiveService } from './live.service';
+import { ReportsService } from './reports.service';
+import { SystemReportService } from './system-report.service';
+import { CurrentRadioService } from '../radio/current-radio.service';
+import { BullMqJobQueue } from '../jobs/bullmq-job-queue';
+import { SettingsService } from '../settings/settings.service';
+import { AudioStoreSource } from '../storage/audio-store';
 import { RadioControlService } from './radio-control.service';
 import { StatsService } from './stats.service';
 import { TrackAdminService } from './track-admin.service';
@@ -37,7 +44,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
 }
 
 @Module({
-  controllers: [AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
+  controllers: [AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
     { provide: AdminAuthService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new AdminAuthService({ adminEmail: c.ADMIN_EMAIL, passwordHash: c.ADMIN_PASSWORD_HASH, jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
@@ -64,6 +71,17 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
       provide: DashboardService,
       inject: [DatabaseService, RadioStateRepository, RadioConfigRepository, TrackRepository, PlaybackHistoryRepository, StationManager, ChannelRepository, TelegramClientManager],
       useFactory: (db: DatabaseService, s: RadioStateRepository, c: RadioConfigRepository, t: TrackRepository, h: PlaybackHistoryRepository, sm: StationManager, ch: ChannelRepository, tg: TelegramClientManager) => new DashboardService(db, s, c, t, h, sm, ch, tg),
+    },
+    { provide: ReportsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new ReportsService(db) },
+    {
+      provide: LiveService,
+      inject: [ChannelRepository, RadioStateRepository, TrackRepository, PlaybackHistoryRepository, StationManager, CurrentRadioService],
+      useFactory: (c: ChannelRepository, s: RadioStateRepository, t: TrackRepository, h: PlaybackHistoryRepository, sm: StationManager, cur: CurrentRadioService) => new LiveService(c, s, t, h, sm, cur),
+    },
+    {
+      provide: SystemReportService,
+      inject: [DatabaseService, BullMqJobQueue, TelegramClientManager, StationManager, ChannelRepository, SettingsService, 'AUDIO_STORE_SOURCE'],
+      useFactory: (db: DatabaseService, q: BullMqJobQueue, tg: TelegramClientManager, sm: StationManager, ch: ChannelRepository, st: SettingsService, store: AudioStoreSource) => new SystemReportService(db, q, tg, sm, ch, st, store),
     },
     {
       provide: ChannelService,

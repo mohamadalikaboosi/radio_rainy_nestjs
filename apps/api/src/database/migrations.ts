@@ -300,4 +300,18 @@ CREATE TABLE lexicon_entries (
 CREATE INDEX lexicon_lang_idx ON lexicon_entries (lang, status);
 `,
   },
+  {
+    id: '004_listener_samples',
+    sql: `
+-- Listener count of each running station, sampled by the leader (basis of the audience report).
+CREATE TABLE listener_samples (
+  channel_id BIGINT NOT NULL REFERENCES channels(telegram_channel_id) ON DELETE CASCADE,
+  at TIMESTAMPTZ NOT NULL,
+  listeners INTEGER NOT NULL CHECK (listeners >= 0),
+  PRIMARY KEY (channel_id, at)
+);
+CREATE INDEX listener_samples_at_idx ON listener_samples (at DESC);
+CREATE INDEX playback_history_ended_idx ON playback_history (end_reason, started_at DESC);
+`,
+  },
 ];

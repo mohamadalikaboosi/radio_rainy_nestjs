@@ -28,6 +28,7 @@ import { FfmpegLiveTranscoder } from './playback/ffmpeg-live-transcoder';
 import { PlaybackEngine } from './playback/playback-engine';
 import { PlaybackHistoryRepository } from './playback/playback-history.repository';
 import { PlaybackRunner } from './playback/playback-runner';
+import { ListenerSampler } from './playback/listener-sampler';
 import { PlaybackSupervisor } from './playback/playback-supervisor';
 import { CurrentRadioService } from './radio/current-radio.service';
 import { RADIO_BUS, RadioBus, RedisRadioBus } from './radio/radio-bus';
@@ -159,7 +160,7 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
     {
       provide: PlaybackRunner,
       inject: [DatabaseService, StationManager, RADIO_BUS, PlaybackHistoryRepository],
-      useFactory: (db: DatabaseService, sm: StationManager, bus: RadioBus, h: PlaybackHistoryRepository) => new PlaybackRunner(new PlaybackSupervisor(db, sm, bus, h, 5000)),
+      useFactory: (db: DatabaseService, sm: StationManager, bus: RadioBus, h: PlaybackHistoryRepository) => new PlaybackRunner(new PlaybackSupervisor(db, sm, bus, h, 5000, undefined, new ListenerSampler(db, sm))),
     },
     {
       provide: CurrentRadioService,

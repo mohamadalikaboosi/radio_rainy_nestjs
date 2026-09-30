@@ -151,3 +151,33 @@ export interface TelegramStatus {
   accountLabel: string | null;
   error?: string;
 }
+
+/** Downloads a file from an authenticated endpoint (browsers can't send the bearer token on a plain link). */
+export async function downloadWithAuth(path: string, filename: string): Promise<void> {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${authStore.get() ?? ''}` } });
+  if (!res.ok) throw new ApiError(res.status, `Download failed (HTTP ${res.status})`, null);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export interface LiveTrack { trackId: string; title: string; artist: string | null; album: string | null; duration: number | null }
+export interface LiveStation {
+  id: string;
+  slug: string;
+  title: string;
+  started: boolean;
+  running: boolean;
+  status: 'PLAYING' | 'STOPPED' | 'IDLE' | 'ERROR';
+  statusReason: string | null;
+  transitionSeq: number;
+  listeners: number;
+  liveOnTelegram: { enabled: boolean; status: 'OFF' | 'STARTING' | 'LIVE' | 'ERROR'; error: string | null };
+  streamUrl: string;
+  nowPlaying: (LiveTrack & { startedAt: string; position: number; lyricsStatus: string; activeLine: string | null }) | null;
+  upNext: (LiveTrack & { queued: boolean }) | null;
+  recent: { trackId: string; title: string; artist: string | null; startedAt: string; endReason: string | null }[];
+}

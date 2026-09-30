@@ -124,6 +124,12 @@ export class PlaybackEngine {
     return 'SKIPPED';
   }
 
+  /** Plays `trackId` right after the current track ends (no cut). Replaces any earlier queued/preselected next track. */
+  queueNext(trackId: string): void {
+    this.forcedTrackId = trackId;
+    void this.discardPlan().then(() => this.d.state.setNext(this.d.channelId, trackId)).catch((e: unknown) => this.logger.warn({ msg: 'queue-next bookkeeping failed', err: String(e) }));
+  }
+
   /** Configuration changed: any preselected "next" track may no longer be eligible. */
   invalidatePlan(): void {
     void this.discardPlan();
@@ -238,7 +244,7 @@ export class PlaybackEngine {
   }
 
   private planNext(): void {
-    if (this.plan || this.planPromise) return;
+    if (this.plan || this.planPromise || this.forcedTrackId) return;
     this.planPromise = (async () => {
       try {
         const sel = await this.d.scheduler.selectNext(this.d.channelId);

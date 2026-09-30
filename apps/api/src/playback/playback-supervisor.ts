@@ -23,6 +23,7 @@ export class PlaybackSupervisor {
     private readonly history: PlaybackHistoryRepository,
     private readonly retryMs = 5000,
     private readonly onBecomeLeader?: () => Promise<void>,
+    private readonly sampler?: { start(): void; stop(): void },
   ) {}
 
   get isLeader(): boolean {
@@ -57,6 +58,7 @@ export class PlaybackSupervisor {
       await this.onBecomeLeader?.();
       this.unsubscribe = await this.bus.subscribe((cmd) => this.handle(cmd));
       await this.stations.reconcile();
+      this.sampler?.start();
     } catch (err) {
       this.logger.error({ msg: 'leader election failed', err: err instanceof Error ? err.message : String(err) });
       await this.demote('election-error');
@@ -82,6 +84,10 @@ export class PlaybackSupervisor {
       case 'play-next':
         this.logger.log({ msg: 'command: play-next', channelId: cmd.channelId, result: station.engine.playNext(cmd.trackId) });
         break;
+      case 'queue-next':
+        station.engine.queueNext(cmd.trackId);
+        this.logger.log({ msg: 'command: queue-next', channelId: cmd.channelId });
+        break;
       case 'config-changed':
         station.engine.invalidatePlan();
         break;
@@ -98,6 +104,7 @@ export class PlaybackSupervisor {
     this.logger.warn({ msg: 'stepping down as playback leader', why });
     await this.unsubscribe?.().catch((e: unknown) => this.logger.warn({ msg: 'unsubscribe failed', err: String(e) }));
     this.unsubscribe = null;
+    this.sampler?.stop();
     await this.stations.stopAll();
     await release();
   }
