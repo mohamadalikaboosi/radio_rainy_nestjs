@@ -62,7 +62,8 @@ import { TrackTranscriptionService } from './transcription/track-transcription.s
             paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]', '*.password', '*.apiHash', '*.apiKey', '*.session', '*.token'],
             censor: '[REDACTED]',
           },
-          autoLogging: { ignore: (req) => /\/stream$/.test((req as { url?: string }).url ?? '') },
+          // the stream, the panel's polling GETs and the Docker healthcheck would drown the real log lines
+          autoLogging: { ignore: (req) => /\/stream$/.test((req as { url?: string }).url ?? '') || ((req as { method?: string }).method === 'GET' && /^\/(admin\/(live|channels|telegram\/status)|radio\/stations)(\?|$)/.test((req as { url?: string }).url ?? '')) },
         },
       }),
     }),
