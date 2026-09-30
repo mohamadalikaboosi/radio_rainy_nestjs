@@ -135,7 +135,7 @@ export class TelegramLiveStreamer {
         this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
         const res = await this.publisher.publish(target, (sink) => this.attach(sink), signal);
         if (signal.aborted) return;
-        throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().slice(-300)}`);
+        throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().slice(-300).split(target.key).join('<stream-key>')}`);
       } catch (err) {
         if (signal.aborted) return;
         const message = err instanceof Error ? err.message : String(err);
