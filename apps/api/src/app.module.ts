@@ -1,96 +1,191 @@
 import { Global, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+
 import { LoggerModule } from 'nestjs-pino';
+
 import { ManualOrAutoLiveApi } from './live/infrastructure/manual-live-api';
+
 import { DEFAULT_LOW, LowQualityStream } from './radio/infrastructure/low-quality-stream';
+
 import { RadioMetrics } from './radio/application/radio-metrics';
+
 import { DiskAudioCache } from './catalog/infrastructure/storage/disk-audio-cache';
+
 import { DiskCachingGateway } from './catalog/infrastructure/storage/disk-caching-gateway';
+
 import { join } from 'node:path';
-import { AuditService } from './administration/application/audit.service';
+
+import { PgAuditService } from './administration/infrastructure/audit.service';
+
 import { PORTAL_AUDIT, PortalAuthController, PortalController } from './accounts/interface/portal.controllers';
+
 import { PortalAuthService } from './accounts/application/portal-auth.service';
+
 import { PortalGuard } from './accounts/interface/portal.guard';
+
 import { randomUUID } from 'node:crypto';
+
 import { HttpAdapterHost } from '@nestjs/core';
+
 import { REALTIME_BUS, RealtimeBus } from './realtime/application/ports/realtime-bus';
+
 import { RedisRealtimeBus } from './realtime/infrastructure/events';
+
 import { ListenerCountPublisher } from './realtime/application/listener-count-publisher';
+
 import { MessagesRepository } from './realtime/application/ports/messages.repository';
+
 import { PgMessagesRepository } from './realtime/infrastructure/messages.repository';
+
 import { RealtimeService } from './realtime/interface/realtime.service';
+
 import { AccountsRepository } from './accounts/application/ports/accounts.repository';
+
 import { PgAccountsRepository } from './accounts/infrastructure/accounts.repository';
+
 import { PlatformSettingsRepository } from './accounts/application/ports/platform-settings.repository';
+
 import { PgPlatformSettingsRepository } from './accounts/infrastructure/platform-settings.repository';
+
 import { AdsRepository } from './engagement/application/ports/ads.repository';
+
 import { PgAdsRepository } from './engagement/infrastructure/ads.repository';
+
 import { DbAdSource } from './engagement/application/ad-source';
+
 import { EngagementPublicController } from './engagement/interface/engagement-public.controller';
+
 import { EngagementSettingsRepository } from './engagement/application/ports/engagement-settings.repository';
+
 import { PgEngagementSettingsRepository } from './engagement/infrastructure/engagement-settings.repository';
+
 import { SponsorsRepository } from './engagement/application/ports/sponsors.repository';
+
 import { PgSponsorsRepository } from './engagement/infrastructure/sponsors.repository';
+
 import { TagPollRepository } from './engagement/application/ports/tag-poll.repository';
+
 import { PgTagPollRepository } from './engagement/infrastructure/tag-poll.repository';
+
 import { TagVoteService } from './engagement/application/tag-vote.service';
+
 import { TagVoteTicker } from './engagement/application/tag-vote-ticker';
+
 import { AdminModule } from './admin.module';
+
 import { LyricsAlignmentService } from './lyrics/application/lyrics-alignment.service';
+
 import { ChannelRepository, ChannelRow } from './catalog/application/ports/channel.repository';
+
 import { PgChannelRepository } from './catalog/infrastructure/persistence/channel.repository';
+
 import { LexiconRepository } from './lyrics/application/lexicon';
+
 import { LanguageService } from './lyrics/application/language.service';
+
 import { LlmClient, OpenAiCompatibleLlm } from './lyrics/infrastructure/llm-client';
+
 import { GramJsLiveApi } from './live/infrastructure/gramjs-live-api';
+
 import { NowPlayingText } from './live/infrastructure/now-playing-text';
+
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/application/telegram-live-streamer';
+
 import { SettingsService } from './administration/application/settings.service';
+
 import { AudioStoreSource } from './catalog/application/ports/audio-store';
-import { SettingsAudioStoreSource } from './catalog/application/audio-store.source';
+
+import { SettingsAudioStoreSource } from './catalog/infrastructure/storage/settings-audio-store-source';
+
 import { CachingTelegramGateway, resolverFrom } from './catalog/infrastructure/storage/caching-gateway';
+
 import { Station, StationManager } from './radio/application/station-manager';
-import { SettingsTranscriptionSource, TranscriptionSource } from './lyrics/application/ports/transcription-source';
+
+import { SettingsTranscriptionSource } from './lyrics/infrastructure/settings-transcription-source';
+
+import { TranscriptionSource } from './lyrics/application/ports/transcription-source';
+
 import { APP_CONFIG, AppConfig, loadConfig } from './shared/infrastructure/config/app-config';
+
 import { DatabaseService } from './shared/infrastructure/database/database.service';
+
 import { BullMqJobQueue } from './lyrics/infrastructure/bullmq-job-queue';
+
 import { JOB_QUEUE } from './lyrics/application/ports/job-queues';
+
 import { JobsRunner } from './lyrics/infrastructure/jobs-runner';
+
 import { LyricsPipeline } from './lyrics/application/lyrics-pipeline';
+
 import { LyricsRepository } from './lyrics/application/ports/lyrics.repository';
+
 import { PgLyricsRepository } from './lyrics/infrastructure/lyrics.repository';
+
 import { LyricsService } from './lyrics/application/lyrics.service';
+
 import { TelegraphLyricsSource } from './lyrics/infrastructure/telegraph-lyrics-source';
+
 import { TrackAudioPipeline } from './radio/application/audio-pipeline';
+
 import { FfmpegLiveTranscoder } from './radio/infrastructure/ffmpeg-live-transcoder';
+
 import { PlaybackEngine } from './radio/application/playback-engine';
+
 import { PlaybackHistoryRepository } from './radio/application/ports/playback-history.repository';
+
 import { PgPlaybackHistoryRepository } from './radio/infrastructure/playback-history.repository';
+
 import { PlaybackRunner } from './radio/application/playback-runner';
+
 import { ListenerSampler } from './radio/application/listener-sampler';
+
 import { PlaybackSupervisor } from './radio/application/playback-supervisor';
+
 import { CurrentRadioService } from './radio/application/current-radio.service';
+
 import { RADIO_BUS, RadioBus } from './radio/application/ports/radio-bus';
+
 import { RedisRadioBus } from './radio/infrastructure/radio-bus';
+
 import { RadioConfigRepository } from './radio/application/ports/radio-config.repository';
+
 import { PgRadioConfigRepository } from './radio/infrastructure/radio-config.repository';
+
 import { RadioScheduler } from './radio/application/radio-scheduler';
+
 import { RadioStateRepository } from './radio/application/ports/radio-state.repository';
+
 import { PgRadioStateRepository } from './radio/infrastructure/radio-state.repository';
+
 import { Broadcaster } from './radio/domain/broadcaster';
+
 import { realClock } from './radio/domain/pacer';
+
 import { MetricsController } from './radio/interface/metrics.controller';
+
 import { RadioController, STREAM_OPTIONS } from './radio/interface/radio.controller';
+
 import { GramJsTelegramGateway } from './catalog/infrastructure/telegram/gramjs.gateway';
+
 import { SessionCipher } from './shared/kernel/session-cipher';
+
 import { TelegramConnection } from './catalog/application/ports/telegram-connection';
+
 import { TelegramClientManager } from './catalog/infrastructure/telegram/telegram-client.manager';
+
 import { TelegramSessionStore } from './catalog/infrastructure/telegram/telegram-session.store';
+
 import { TELEGRAM_GATEWAY, TelegramGateway } from './catalog/application/ports/telegram.types';
+
 import { TelegramTrackDiscovery } from './catalog/application/track-discovery';
+
 import { TrackRepository } from './catalog/application/ports/track.repository';
+
 import { PgTrackRepository } from './catalog/infrastructure/persistence/track.repository';
+
 import { FfmpegPreprocessor } from './lyrics/infrastructure/audio-preprocessor';
+
 import { TrackTranscriptionService } from './lyrics/application/track-transcription.service';
+
 
 /** Attaches the WebSocket server to the HTTP server once the app is up, and closes it (and its Redis connections) on shutdown. */
 class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
@@ -140,7 +235,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: AdsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAdsRepository(db) },
     { provide: AccountsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAccountsRepository(db) },
     { provide: PlatformSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgPlatformSettingsRepository(db) },
-    { provide: PORTAL_AUDIT, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AuditService(db) },
+    { provide: PORTAL_AUDIT, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAuditService(db) },
     { provide: PortalAuthService, inject: [AccountsRepository, PlatformSettingsRepository, APP_CONFIG], useFactory: (a: AccountsRepository, p: PlatformSettingsRepository, c: AppConfig) => new PortalAuthService(a, p, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 12 * 3600 }) },
     { provide: PortalGuard, inject: [PortalAuthService, AccountsRepository], useFactory: (a: PortalAuthService, acc: AccountsRepository) => new PortalGuard(a, acc) },
     { provide: SponsorsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgSponsorsRepository(db) },

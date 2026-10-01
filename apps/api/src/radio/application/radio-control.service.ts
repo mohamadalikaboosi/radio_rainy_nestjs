@@ -4,7 +4,7 @@ import { RadioBus } from './ports/radio-bus';
 import { ActorContext } from './radio-configuration.service';
 import { RadioStateRepository } from './ports/radio-state.repository';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 
 /**
  * Admin playback controls. They only publish commands: the leader's PlaybackEngine executes them one at a time,

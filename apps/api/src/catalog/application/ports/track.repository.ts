@@ -28,4 +28,14 @@ export abstract class TrackRepository {
   abstract getLyricsLanguage(trackId: string): Promise<'fa' | 'en' | 'mixed' | 'unknown' | null>;
   /** What identifies the stored audio of a message: document id + size come from the file reference. */
   abstract getAudioIdentity(channelId: string, messageId: number): Promise<{ fileReference: string; fileSize: number | null } | null>;
+  /** Hashtags of a track (admin detail view). */
+  abstract hashtagsOf(trackId: string): Promise<{ value: string; normalized: string }[]>;
+  /** Admin-only columns that are not part of the public Track. */
+  abstract adminExtra(trackId: string): Promise<{ captionRaw: string | null; lyricsError: string | null; deletedAt: Date | null; consecutiveFailures: number } | null>;
+  /** Idempotent and race-safe: one conditional UPDATE decides whether anything changed (true = it changed). */
+  abstract setEnabled(trackId: string, enabled: boolean): Promise<boolean>;
+  /** The track vanished from Telegram: mark it unavailable (soft delete). */
+  abstract markDeleted(trackId: string): Promise<void>;
+  /** Titles/artists for a set of tracks (previews). */
+  abstract titlesOf(trackIds: readonly string[]): Promise<{ id: string; title: string; artist: string | null }[]>;
 }

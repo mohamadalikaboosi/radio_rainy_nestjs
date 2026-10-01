@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AdminGuard, AdminRequest } from '../../administration/interface/admin.guard';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { AdsRepository } from '../../engagement/application/ports/ads.repository';

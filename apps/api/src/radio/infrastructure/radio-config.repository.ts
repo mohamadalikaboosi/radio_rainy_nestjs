@@ -1,5 +1,6 @@
 import { RadioConfigRepository, RadioConfigWithMeta } from '../application/ports/radio-config.repository';
 import { Injectable } from '@nestjs/common';
+import { TxHandle } from '../../shared/kernel/transaction';
 import { DatabaseService, Queryable } from '../../shared/infrastructure/database/database.service';
 import { HashtagMatchMode, HashtagSelection, RadioMode, RadioRuleSnapshot, TrackCandidate } from '../domain/radio.types';
 
@@ -75,5 +76,56 @@ export class PgRadioConfigRepository implements RadioConfigRepository {
   /** Applies the env default only while nobody has configured the radio yet. */
   async applyDefaultWindow(channelId: string, window: number): Promise<void> {
     await this.db.query('UPDATE radio_configuration SET recent_track_window = $2 WHERE channel_id = $1 AND updated_by IS NULL', [channelId, window]);
+  }
+
+  async lock(tx: TxHandle, channelId: string): Promise<number | null> {
+    const r = await (tx as Queryable).query<{ version: number }>('SELECT version FROM radio_configuration WHERE channel_id = $1 FOR UPDATE', [channelId]);
+    return r.rows[0]?.version ?? null;
+  }
+
+  async hashtagIds(tx: TxHandle, tags: readonly string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(tags)];
+    if (unique.length === 0) return new Map();
+    const r = await (tx as Queryable).query<{ id: string; normalized_value: string }>('SELECT id, normalized_value FROM hashtags WHERE normalized_value = ANY($1::text[])', [unique]);
+    return new Map(r.rows.map((x) => [x.normalized_value, x.id]));
+  }
+
+  async updateSettings(tx: TxHandle, channelId: string, s: { mode: string; hashtagMatchMode: string; recentTrackWindow: number; fallbackToGlobal: boolean; enabled: boolean }, actor: string): Promise<void> {
+    await (tx as Queryable).query(
+      `UPDATE radio_configuration SET mode=$1, hashtag_match_mode=$2, recent_track_window=$3, fallback_to_global=$4, enabled=$5,
+              version = version + 1, updated_by=$6, updated_at=now() WHERE channel_id = $7`,
+      [s.mode, s.hashtagMatchMode, s.recentTrackWindow, s.fallbackToGlobal, s.enabled, actor, channelId],
+    );
+  }
+
+  async replaceHashtagSelection(tx: TxHandle, channelId: string, entries: readonly { hashtagId: string; weight: number }[]): Promise<void> {
+    const q = tx as Queryable;
+    await q.query('DELETE FROM radio_hashtag_selection WHERE channel_id = $1', [channelId]);
+    for (const [i, e] of entries.entries()) {
+      await q.query('INSERT INTO radio_hashtag_selection (channel_id, hashtag_id, weight, position) VALUES ($1,$2,$3,$4) ON CONFLICT (channel_id, hashtag_id) DO UPDATE SET weight=$3, position=$4', [channelId, e.hashtagId, e.weight, i]);
+    }
+  }
+
+  async bumpVersion(tx: TxHandle, channelId: string, actor: string): Promise<void> {
+    await (tx as Queryable).query('UPDATE radio_configuration SET version = version + 1, updated_by = $1, updated_at = now() WHERE channel_id = $2', [actor, channelId]);
+  }
+
+  async insertRule(tx: TxHandle, channelId: string, r: { name: string; priority: number; matchMode: string; weight: number; enabled: boolean }): Promise<string> {
+    const res = await (tx as Queryable).query<{ id: string }>('INSERT INTO radio_rules (channel_id, name, priority, match_mode, weight, enabled) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [channelId, r.name, r.priority, r.matchMode, r.weight, r.enabled]);
+    return res.rows[0]?.id ?? '';
+  }
+
+  async updateRule(tx: TxHandle, channelId: string, ruleId: string, r: { name: string; priority: number; matchMode: string; weight: number; enabled: boolean }): Promise<void> {
+    await (tx as Queryable).query('UPDATE radio_rules SET name=$3, priority=$4, match_mode=$5, weight=$6, enabled=$7, updated_at=now() WHERE id=$1 AND channel_id=$2', [ruleId, channelId, r.name, r.priority, r.matchMode, r.weight, r.enabled]);
+  }
+
+  async replaceRuleHashtags(tx: TxHandle, ruleId: string, tags: readonly { hashtagId: string; kind: 'INCLUDE' | 'EXCLUDE' }[]): Promise<void> {
+    const q = tx as Queryable;
+    await q.query('DELETE FROM radio_rule_hashtags WHERE rule_id = $1', [ruleId]);
+    for (const t of tags) await q.query('INSERT INTO radio_rule_hashtags (rule_id, hashtag_id, kind) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [ruleId, t.hashtagId, t.kind]);
+  }
+
+  async deleteRule(tx: TxHandle, channelId: string, ruleId: string): Promise<void> {
+    await (tx as Queryable).query('DELETE FROM radio_rules WHERE id = $1 AND channel_id = $2', [ruleId, channelId]);
   }
 }

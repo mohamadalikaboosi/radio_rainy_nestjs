@@ -7,7 +7,7 @@ import { LanguageService } from '../../lyrics/application/language.service';
 import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
 import { LlmSettingsInput, llmSettingsSchema, SettingsService, StorageSettingsInput, storageSettingsSchema, TelegramSettingsInput, telegramSettingsSchema, WhisperSettingsInput, whisperSettingsSchema } from '../application/settings.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
-import { AuditService } from '../application/audit.service';
+import { AuditService } from '../application/ports/audit.service';
 
 const lang = z.enum(['fa', 'en', 'mixed']);
 

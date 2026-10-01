@@ -225,4 +225,29 @@ export class PgTrackRepository implements TrackRepository {
     const x = r.rows[0];
     return x ? { fileReference: x.telegram_file_reference, fileSize: x.file_size === null ? null : Number(x.file_size) } : null;
   }
+
+  async hashtagsOf(trackId: string): Promise<{ value: string; normalized: string }[]> {
+    const r = await this.db.query<{ value: string; normalized_value: string }>('SELECT h.value, h.normalized_value FROM track_hashtags th JOIN hashtags h ON h.id = th.hashtag_id WHERE th.track_id = $1 ORDER BY h.normalized_value', [trackId]);
+    return r.rows.map((h) => ({ value: h.value, normalized: h.normalized_value }));
+  }
+
+  async adminExtra(trackId: string): Promise<{ captionRaw: string | null; lyricsError: string | null; deletedAt: Date | null; consecutiveFailures: number } | null> {
+    const r = await this.db.query<{ caption_raw: string | null; lyrics_error: string | null; deleted_at: Date | null; consecutive_failures: number }>('SELECT caption_raw, lyrics_error, deleted_at, consecutive_failures FROM tracks WHERE id = $1', [trackId]);
+    const x = r.rows[0];
+    return x ? { captionRaw: x.caption_raw, lyricsError: x.lyrics_error, deletedAt: x.deleted_at, consecutiveFailures: x.consecutive_failures } : null;
+  }
+
+  async setEnabled(trackId: string, enabled: boolean): Promise<boolean> {
+    const r = await this.db.query('UPDATE tracks SET enabled = $2, updated_at = now() WHERE id = $1 AND enabled <> $2', [trackId, enabled]);
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  async markDeleted(trackId: string): Promise<void> {
+    await this.db.query(`UPDATE tracks SET status = 'UNAVAILABLE', deleted_at = now(), updated_at = now() WHERE id = $1`, [trackId]);
+  }
+
+  async titlesOf(trackIds: readonly string[]): Promise<{ id: string; title: string; artist: string | null }[]> {
+    if (trackIds.length === 0) return [];
+    return (await this.db.query<{ id: string; title: string; artist: string | null }>('SELECT id, title, artist FROM tracks WHERE id = ANY($1::uuid[])', [trackIds])).rows;
+  }
 }

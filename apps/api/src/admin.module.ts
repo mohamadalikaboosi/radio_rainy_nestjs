@@ -26,7 +26,8 @@ import { AdminMessagesController } from './realtime/interface/messages.controlle
 import { AdminAccountsController, AdminCampaignsController, AdminPlatformController, AdminStationOwnerController } from './accounts/interface/platform-admin.controllers';
 import { AdminAdsController, AdminEngagementController, AdminSponsorsController } from './engagement/interface/engagement-admin.controllers';
 import { AdminLanguageController, AdminSettingsController } from './administration/interface/settings-language.controllers';
-import { AuditService } from './administration/application/audit.service';
+import { AuditService } from './administration/application/ports/audit.service';
+import { PgAuditService } from './administration/infrastructure/audit.service';
 import { DashboardService } from './administration/application/dashboard.service';
 import { LiveService } from './administration/application/live.service';
 import { ReportsService } from './administration/application/reports.service';
@@ -66,19 +67,19 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: AdminAuthService, inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminAuthService(u, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
     { provide: 'ADMIN_SEEDER', inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminSeederLifecycle(u, c) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
-    { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AuditService(db) },
+    { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAuditService(db) },
     { provide: TrackQueryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgTrackQueryRepository(db) },
     { provide: StatsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new StatsService(db) },
     { provide: 'STATS_LIFECYCLE', inject: [StatsService], useFactory: (s: StatsService) => new StatsLifecycle(s) },
     {
       provide: TrackAdminService,
-      inject: [DatabaseService, TrackRepository, LyricsRepository, LyricsPipeline, TelegramTrackDiscovery, AuditService],
-      useFactory: (db: DatabaseService, t: TrackRepository, l: LyricsRepository, p: LyricsPipeline, d: TelegramTrackDiscovery, a: AuditService) => new TrackAdminService(db, t, l, p, d, a),
+      inject: [TrackRepository, LyricsRepository, LyricsPipeline, TelegramTrackDiscovery, AuditService],
+      useFactory: (t: TrackRepository, l: LyricsRepository, p: LyricsPipeline, d: TelegramTrackDiscovery, a: AuditService) => new TrackAdminService(t, l, p, d, a),
     },
     {
       provide: RadioConfigurationService,
-      inject: [DatabaseService, RadioConfigRepository, AuditService, RADIO_BUS, RadioStateRepository, PlaybackHistoryRepository],
-      useFactory: (db: DatabaseService, r: RadioConfigRepository, a: AuditService, bus: RadioBus, s: RadioStateRepository, h: PlaybackHistoryRepository) => new RadioConfigurationService(db, r, a, bus, s, h),
+      inject: [DatabaseService, RadioConfigRepository, AuditService, RADIO_BUS, RadioStateRepository, PlaybackHistoryRepository, TrackRepository],
+      useFactory: (db: DatabaseService, r: RadioConfigRepository, a: AuditService, bus: RadioBus, s: RadioStateRepository, h: PlaybackHistoryRepository, tr: TrackRepository) => new RadioConfigurationService(db, r, a, bus, s, h, tr),
     },
     {
       provide: RadioControlService,

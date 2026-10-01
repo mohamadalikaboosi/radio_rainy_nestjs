@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 import { RadioBus } from '../../radio/application/ports/radio-bus';
 import { ActorContext } from '../../radio/application/radio-configuration.service';
 import { TelegramGateway, TelegramNotReadyError } from './ports/telegram.types';

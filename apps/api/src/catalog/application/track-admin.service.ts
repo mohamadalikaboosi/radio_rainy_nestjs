@@ -1,16 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsPipeline } from '../../lyrics/application/lyrics-pipeline';
 import { LyricsRepository } from '../../lyrics/application/ports/lyrics.repository';
 import { TelegramTrackDiscovery } from './track-discovery';
 import { TrackRepository } from './ports/track.repository';
 import { ActorContext } from '../../radio/application/radio-configuration.service';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 
 @Injectable()
 export class TrackAdminService {
   constructor(
-    private readonly db: DatabaseService,
     private readonly tracks: TrackRepository,
     private readonly lyrics: LyricsRepository,
     private readonly pipeline: LyricsPipeline,
@@ -21,20 +19,14 @@ export class TrackAdminService {
   async detail(id: string): Promise<unknown> {
     const track = await this.tracks.findById(id);
     if (!track) throw new NotFoundException('Track not found');
-    const [hashtags, lyrics, synced, extra] = await Promise.all([
-      this.db.query<{ value: string; normalized_value: string }>('SELECT h.value, h.normalized_value FROM track_hashtags th JOIN hashtags h ON h.id = th.hashtag_id WHERE th.track_id = $1 ORDER BY h.normalized_value', [id]),
-      this.lyrics.getLyrics(id),
-      this.lyrics.getLatestSynced(id),
-      this.db.query<{ caption_raw: string | null; lyrics_error: string | null; deleted_at: Date | null; consecutive_failures: number }>('SELECT caption_raw, lyrics_error, deleted_at, consecutive_failures FROM tracks WHERE id = $1', [id]),
-    ]);
-    const x = extra.rows[0];
+    const [hashtags, lyrics, synced, x] = await Promise.all([this.tracks.hashtagsOf(id), this.lyrics.getLyrics(id), this.lyrics.getLatestSynced(id), this.tracks.adminExtra(id)]);
     return {
       ...track,
-      captionRaw: x?.caption_raw ?? null,
-      lyricsError: x?.lyrics_error ?? null,
-      deletedAt: x?.deleted_at ?? null,
-      consecutiveFailures: x?.consecutive_failures ?? 0,
-      hashtags: hashtags.rows.map((h) => ({ value: h.value, normalized: h.normalized_value })),
+      captionRaw: x?.captionRaw ?? null,
+      lyricsError: x?.lyricsError ?? null,
+      deletedAt: x?.deletedAt ?? null,
+      consecutiveFailures: x?.consecutiveFailures ?? 0,
+      hashtags,
       lyrics: lyrics ? { sourceUrl: lyrics.sourceUrl, status: lyrics.status, error: lyrics.error, rawText: lyrics.rawText, fetchedAt: lyrics.fetchedAt } : null,
       syncedLyrics: synced ? { version: synced.version, quality: synced.quality, algorithmVersion: synced.algorithmVersion, lines: synced.lines, createdAt: synced.createdAt } : null,
     };
@@ -42,8 +34,7 @@ export class TrackAdminService {
 
   /** Idempotent and race-safe: a single conditional UPDATE decides whether anything changed. */
   async setEnabled(id: string, enabled: boolean, ctx: ActorContext): Promise<{ id: string; enabled: boolean; changed: boolean }> {
-    const r = await this.db.query('UPDATE tracks SET enabled = $2, updated_at = now() WHERE id = $1 AND enabled <> $2', [id, enabled]);
-    if ((r.rowCount ?? 0) === 0) {
+    if (!(await this.tracks.setEnabled(id, enabled))) {
       if (!(await this.tracks.findById(id))) throw new NotFoundException('Track not found');
       return { id, enabled, changed: false };
     }
@@ -65,7 +56,7 @@ export class TrackAdminService {
     if (!track) throw new NotFoundException('Track not found');
     const res = await this.discovery.refreshMessage(track.telegramChannelId, track.telegramMessageId);
     if (!res) {
-      await this.db.query(`UPDATE tracks SET status = 'UNAVAILABLE', deleted_at = now(), updated_at = now() WHERE id = $1`, [id]);
+      await this.tracks.markDeleted(id);
     }
     const outcome = res?.outcome ?? 'unavailable';
     await this.audit.record({ actor: ctx.actor, action: 'track.refresh-metadata', entityType: 'track', entityId: id, after: { outcome }, requestId: ctx.requestId });

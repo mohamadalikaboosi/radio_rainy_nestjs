@@ -14,7 +14,7 @@ import { LiveService } from '../application/live.service';
 import { ReportQuery, reportQuerySchema, ReportsService } from '../application/reports.service';
 import { SystemReportService } from '../application/system-report.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
-import { AuditService } from '../application/audit.service';
+import { AuditService } from '../application/ports/audit.service';
 import { DashboardService } from '../application/dashboard.service';
 import { RadioControlService } from '../../radio/application/radio-control.service';
 import { StatsService } from '../application/stats.service';

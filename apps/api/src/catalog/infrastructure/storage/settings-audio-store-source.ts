@@ -1,6 +1,6 @@
-import { SettingsService } from '../../administration/application/settings.service';
-import { AudioStore, AudioStoreSource } from './ports/audio-store';
-import { MinioAudioStore } from '../infrastructure/storage/minio-audio-store';
+import { SettingsService } from '../../../administration/application/settings.service';
+import { AudioStore, AudioStoreSource } from '../../application/ports/audio-store';
+import { MinioAudioStore } from './minio-audio-store';
 
 /** Builds the MinIO client from the panel settings and rebuilds it only when they change. */
 export class SettingsAudioStoreSource implements AudioStoreSource {

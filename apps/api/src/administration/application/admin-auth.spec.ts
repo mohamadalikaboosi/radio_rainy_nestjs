@@ -3,7 +3,7 @@ import { sign } from 'jsonwebtoken';
 import { AdminUser, AdminUserStore } from './ports/admin-users.repository';
 import { AdminAuthService, passwordPolicy } from './admin-auth.service';
 import { resetAdminPassword, seedAdmin } from './admin-seeder';
-import { scrub } from './audit.service';
+import { scrub } from '../infrastructure/audit.service';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 
 class MemoryUsers implements AdminUserStore {

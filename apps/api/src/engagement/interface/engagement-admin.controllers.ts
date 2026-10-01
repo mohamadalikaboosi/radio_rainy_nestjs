@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundE
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AdminGuard, AdminRequest } from '../../administration/interface/admin.guard';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { AdInput, AdsRepository } from '../application/ports/ads.repository';

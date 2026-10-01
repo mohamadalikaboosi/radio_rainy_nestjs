@@ -2,7 +2,7 @@ import { listenersOf } from '../../radio/application/station-manager';
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { z } from 'zod';
-import { AuditService } from '../../administration/application/audit.service';
+import { AuditService } from '../../administration/application/ports/audit.service';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';

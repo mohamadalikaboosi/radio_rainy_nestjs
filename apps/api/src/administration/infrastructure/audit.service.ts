@@ -1,15 +1,6 @@
+import { AuditService, AuditEntry, AuditRow } from '../application/ports/audit.service';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService, Queryable } from '../../shared/infrastructure/database/database.service';
-
-export interface AuditEntry {
-  actor: string;
-  action: string;
-  entityType: string;
-  entityId?: string | null;
-  before?: unknown;
-  after?: unknown;
-  requestId?: string | null;
-}
 
 const SENSITIVE = /password|secret|token|session|hash|apikey|api_key/i;
 
@@ -22,19 +13,8 @@ export function scrub(value: unknown): unknown {
   return value;
 }
 
-export interface AuditRow {
-  id: string;
-  at: Date;
-  actor: string;
-  action: string;
-  entityType: string;
-  entityId: string | null;
-  before: unknown;
-  after: unknown;
-}
-
 @Injectable()
-export class AuditService {
+export class PgAuditService implements AuditService {
   constructor(private readonly db: DatabaseService) {}
 
   async record(e: AuditEntry, q: Queryable = this.db): Promise<void> {
