@@ -18,22 +18,32 @@ export interface TelegramLiveApi {
   closeLiveStream(channelId: string): Promise<void>;
 }
 
+export interface PublishHooks {
+  /** Called once ffmpeg has really written data to Telegram (not merely started). */
+  onActive?: () => void;
+  /** Every line ffmpeg printed (warnings/errors), for the log. */
+  onLog?: (line: string) => void;
+}
+
 /** The process that pushes audio to Telegram. Abstracted so tests never spawn ffmpeg. */
 export interface RtmpPublisher {
   /** Runs until the process exits or `signal` aborts. `input` is the MP3 radio stream. */
-  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal): Promise<{ code: number | null; stderr: string }>;
+  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks?: PublishHooks): Promise<{ code: number | null; stderr: string }>;
 }
 
 /** Pure: the ffmpeg arguments used to publish MP3 audio (stdin) + a still frame to Telegram over RTMP(S). */
 export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128): string[] {
   const base = target.url.endsWith('/') ? target.url : `${target.url}/`;
   return [
-    '-nostdin', '-loglevel', 'warning',
-    '-re', '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=640x360:r=10', // Telegram requires a video track: a static dark frame
-    '-f', 'mp3', '-i', 'pipe:0',
+    '-nostdin', '-loglevel', 'warning', '-progress', 'pipe:1', '-nostats',
+    // ONE realtime clock for both inputs (-re): Telegram drops a connection that is fed faster than real time
+    '-re', '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=1280x720:r=25', // Telegram requires a video track: a static dark frame
+    '-re', '-thread_queue_size', '1024', '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', '20', '-b:v', '150k',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-profile:v', 'main',
+    '-g', '50', '-keyint_min', '50', '-sc_threshold', '0', '-b:v', '600k', '-maxrate', '600k', '-bufsize', '1200k', // keyframe every 2 s, constant rate
     '-c:a', 'aac', '-b:a', `${audioBitrateKbps}k`, '-ar', '48000', '-ac', '2',
+    '-max_muxing_queue_size', '1024',
     '-flvflags', 'no_duration_filesize', '-f', 'flv', `${base}${target.key}`,
   ];
 }
@@ -41,13 +51,25 @@ export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128):
 export class FfmpegRtmpPublisher implements RtmpPublisher {
   constructor(private readonly ffmpegPath = 'ffmpeg', private readonly bitrateKbps = 128) {}
 
-  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal): Promise<{ code: number | null; stderr: string }> {
+  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks: PublishHooks = {}): Promise<{ code: number | null; stderr: string }> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return resolve({ code: null, stderr: '' });
-      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, this.bitrateKbps), { stdio: ['pipe', 'ignore', 'pipe'] });
+      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, this.bitrateKbps), { stdio: ['pipe', 'pipe', 'pipe'] });
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => {
-        stderr = (stderr + d.toString()).slice(-1500);
+        const text = d.toString();
+        stderr = (stderr + text).slice(-1500);
+        for (const line of text.split(/\r?\n/)) if (line.trim()) hooks.onLog?.(line.split(target.key).join('<stream-key>'));
+      });
+      // `-progress`: `total_size` is the number of bytes written to the output; > 0 means Telegram accepted the connection and the data
+      let active = false;
+      proc.stdout.on('data', (d: Buffer) => {
+        if (active) return;
+        const m = /total_size=(\d+)/.exec(d.toString());
+        if (m && Number(m[1]) > 0) {
+          active = true;
+          hooks.onActive?.();
+        }
       });
       proc.stdin.on('error', () => undefined); // EPIPE when ffmpeg exits first
       const detach = input(proc.stdin);
@@ -74,11 +96,11 @@ export interface LiveOptions {
   maxBacklogBytes: number;
   /** After this long without a crash the retry delay resets. */
   stableAfterMs: number;
-  /** LIVE is only reported once ffmpeg has stayed connected this long (it exits at once when the RTMP connection is refused). */
-  confirmAfterMs: number;
+  /** If ffmpeg has not written any data to Telegram this long after starting, the attempt is abandoned with an error (a hung RTMPS handshake never exits by itself). */
+  activeTimeoutMs: number;
 }
 
-export const DEFAULT_LIVE_OPTIONS: LiveOptions = { retryMinMs: 3000, retryMaxMs: 60_000, maxBacklogBytes: 512 * 1024, stableAfterMs: 60_000, confirmAfterMs: 6000 };
+export const DEFAULT_LIVE_OPTIONS: LiveOptions = { retryMinMs: 3000, retryMaxMs: 60_000, maxBacklogBytes: 512 * 1024, stableAfterMs: 60_000, activeTimeoutMs: 30_000 };
 
 /**
  * Mirrors a station's radio stream into the channel's Telegram live stream, so the music also plays inside Telegram.
@@ -133,12 +155,32 @@ export class TelegramLiveStreamer {
         await this.channels.setLiveStatus(this.channelId, 'STARTING', null);
         const target = await this.api.openLiveStream(this.channelId, this.title);
         if (signal.aborted) return;
-        const confirm = setTimeout(() => {
-          if (signal.aborted) return;
-          this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
-          void this.channels.setLiveStatus(this.channelId, 'LIVE', null).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
-        }, this.opt.confirmAfterMs);
-        const res = await this.publisher.publish(target, (sink) => this.attach(sink), signal).finally(() => clearTimeout(confirm));
+        this.logger.log({ msg: 'telegram live: publishing', channelId: this.channelId, server: target.url });
+        const attempt = new AbortController();
+        const onOuterAbort = (): void => attempt.abort();
+        signal.addEventListener('abort', onOuterAbort, { once: true });
+        let active = false;
+        let hung = false;
+        const watchdog = setTimeout(() => {
+          if (active || signal.aborted) return;
+          hung = true;
+          attempt.abort();
+        }, this.opt.activeTimeoutMs);
+        const hooks: PublishHooks = {
+          onActive: () => {
+            if (signal.aborted) return;
+            active = true;
+            clearTimeout(watchdog);
+            this.logger.log({ msg: 'telegram live stream started', channelId: this.channelId });
+            void this.channels.setLiveStatus(this.channelId, 'LIVE', null).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
+          },
+          onLog: (line) => this.logger.warn({ msg: 'ffmpeg', channelId: this.channelId, line }),
+        };
+        const res = await this.publisher.publish(target, (sink) => this.attach(sink), attempt.signal, hooks).finally(() => {
+          clearTimeout(watchdog);
+          signal.removeEventListener('abort', onOuterAbort);
+        });
+        if (hung) throw new Error(`ffmpeg connected but Telegram accepted no data within ${Math.round(this.opt.activeTimeoutMs / 1000)} s (RTMPS handshake stuck?) ${res.stderr.trim().split(target.key).join('<stream-key>')}`.trim());
         if (signal.aborted) return;
         throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().split(target.key).join('<stream-key>')}`);
       } catch (err) {

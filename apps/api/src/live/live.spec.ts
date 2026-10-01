@@ -29,7 +29,7 @@ describe('TelegramLiveStreamer', () => {
     const streamer = new TelegramLiveStreamer(
       '1001', 'Radio', broadcaster, api, { publish },
       { setLiveStatus: async (_id, s, e = null) => void statuses.push([s, e]) },
-      { retryMinMs: 5, retryMaxMs: 20, maxBacklogBytes: 1024, stableAfterMs: 10_000, confirmAfterMs: 1 },
+      { retryMinMs: 5, retryMaxMs: 20, maxBacklogBytes: 1024, stableAfterMs: 10_000, activeTimeoutMs: 400 },
       (ms, signal) => new Promise((r) => { const t = setTimeout(r, ms); signal.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); }),
     );
     return { streamer, statuses, api, broadcaster };
@@ -38,7 +38,8 @@ describe('TelegramLiveStreamer', () => {
   it('goes LIVE, mirrors the radio stream into the publisher, and stops cleanly (closing the Telegram stream)', async () => {
     const received: Buffer[] = [];
     let attached = false;
-    const { streamer, statuses, api, broadcaster } = setup(async (_t, input, signal) => {
+    const { streamer, statuses, api, broadcaster } = setup(async (_t, input, signal, hooks) => {
+      hooks?.onActive?.();
       const sink = new Writable({ write(chunk: Buffer, _e, cb) { received.push(chunk); cb(); } });
       const detach = input(sink);
       attached = true;
@@ -63,7 +64,8 @@ describe('TelegramLiveStreamer', () => {
   it('reports ERROR with the reason (e.g. missing admin right) and retries with backoff until it works', async () => {
     let opens = 0;
     const { streamer, statuses } = setup(
-      async (_t, _i, signal) => {
+      async (_t, _i, signal, hooks) => {
+        hooks?.onActive?.();
         await new Promise<void>((r) => signal.addEventListener('abort', () => r(), { once: true }));
         return { code: 0, stderr: '' };
       },
@@ -98,6 +100,20 @@ describe('TelegramLiveStreamer', () => {
     expect(broadcaster.listenerCount).toBe(1);
     await streamer.stop();
     expect(broadcaster.listenerCount).toBe(0);
+  });
+
+  it('a connection that never carries data (stuck handshake) is abandoned with an error, never reported LIVE', async () => {
+    let runs = 0;
+    const { streamer, statuses } = setup(async (_t, _i, signal) => {
+      runs++;
+      await new Promise<void>((r) => signal.addEventListener('abort', () => r(), { once: true }));
+      return { code: null, stderr: 'tls: timeout' };
+    });
+    streamer.start();
+    await wait(() => runs >= 2);
+    expect(statuses.some((s) => s[0] === 'LIVE')).toBe(false);
+    expect(statuses.find((s) => s[0] === 'ERROR')?.[1]).toMatch(/accepted no data.*tls: timeout/);
+    await streamer.stop();
   });
 
   it('start() is idempotent and stop() before start is a no-op', async () => {
