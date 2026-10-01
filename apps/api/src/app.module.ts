@@ -90,7 +90,8 @@ import { NowPlayingText } from './live/infrastructure/now-playing-text';
 
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/application/telegram-live-streamer';
 
-import { SettingsService } from './administration/application/settings.service';
+import { SettingsService } from './administration/application/ports/settings.service';
+import { PgSettingsService } from './administration/infrastructure/settings.service';
 
 import { AudioStoreSource } from './catalog/application/ports/audio-store';
 
@@ -247,7 +248,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
       provide: SettingsService,
       inject: [DatabaseService, APP_CONFIG],
       useFactory: (db: DatabaseService, c: AppConfig) =>
-        new SettingsService(db, new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY, 'app-settings'), {
+        new PgSettingsService(db, new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY, 'app-settings'), {
           storage: c.MINIO_ENDPOINT && c.MINIO_ACCESS_KEY && c.MINIO_SECRET_KEY ? { endpoint: c.MINIO_ENDPOINT, port: c.MINIO_PORT, useSsl: c.MINIO_USE_SSL, bucket: c.MINIO_BUCKET, accessKey: c.MINIO_ACCESS_KEY, secretKey: c.MINIO_SECRET_KEY } : undefined,
           telegram: c.TELEGRAM_API_ID && c.TELEGRAM_API_HASH ? { apiId: c.TELEGRAM_API_ID, apiHash: c.TELEGRAM_API_HASH } : undefined,
           whisper: c.WHISPER_URL ? { url: c.WHISPER_URL, model: c.WHISPER_MODEL, apiKey: c.WHISPER_API_KEY, language: c.WHISPER_LANGUAGE, sampleRate: c.WHISPER_SAMPLE_RATE, timeoutSeconds: c.WHISPER_TIMEOUT_SECONDS } : undefined,

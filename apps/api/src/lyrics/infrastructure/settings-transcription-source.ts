@@ -1,5 +1,5 @@
 import { TranscriptionRuntime, TranscriptionSource } from '../application/ports/transcription-source';
-import { SettingsService } from '../../administration/application/settings.service';
+import { SettingsService } from '../../administration/application/ports/settings.service';
 import { WhisperTranscriptionProvider } from './whisper-transcription.provider';
 
 /** Builds the Whisper provider from the panel/env settings and rebuilds it only when they change. */

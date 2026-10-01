@@ -1,6 +1,6 @@
 import { Client } from 'minio';
 import { Readable } from 'node:stream';
-import { StorageSettings } from '../../../administration/application/settings.service';
+import { StorageSettings } from '../../../administration/application/ports/settings.service';
 import { AudioStore } from '../../application/ports/audio-store';
 
 function isNotFound(err: unknown): boolean {

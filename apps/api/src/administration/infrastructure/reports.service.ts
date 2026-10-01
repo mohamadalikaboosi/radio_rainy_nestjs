@@ -1,13 +1,11 @@
+import { ReportsService, ReportQuery, ReportSummary } from '../application/ports/reports.service';
+
 import { Injectable } from '@nestjs/common';
-import { z } from 'zod';
+
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
+
 import { SAMPLE_EVERY_SECONDS } from '../../radio/application/listener-sampler';
 
-export const reportQuerySchema = z.object({
-  range: z.enum(['24h', '7d', '30d', '90d']).default('7d'),
-  channel: z.string().regex(/^\d{1,20}$/).optional(),
-});
-export type ReportQuery = z.infer<typeof reportQuerySchema>;
 
 const RANGES: Record<ReportQuery['range'], { interval: string; bucket: 'hour' | 'day' }> = {
   '24h': { interval: '24 hours', bucket: 'hour' },
@@ -15,16 +13,6 @@ const RANGES: Record<ReportQuery['range'], { interval: string; bucket: 'hour' | 
   '30d': { interval: '30 days', bucket: 'day' },
   '90d': { interval: '90 days', bucket: 'day' },
 };
-
-export interface ReportSummary {
-  plays: number;
-  uniqueTracks: number;
-  airtimeSeconds: number;
-  outcomes: { finished: number; skipped: number; admin: number; errors: number };
-  skipRate: number;
-  errorRate: number;
-  audience: { averageListeners: number; peakListeners: number; listenerMinutes: number };
-}
 
 const csvCell = (v: unknown): string => {
   const s = v === null || v === undefined ? '' : v instanceof Date ? v.toISOString() : String(v);
@@ -34,7 +22,7 @@ export const csvLine = (cells: readonly unknown[]): string => `${cells.map(csvCe
 
 /** All admin analytics. Plain SQL over indexed tables; every figure is scoped by period and (optionally) one channel. */
 @Injectable()
-export class ReportsService {
+export class PgReportsService implements ReportsService {
   constructor(private readonly db: DatabaseService) {}
 
   private ch(q: ReportQuery): string | null {

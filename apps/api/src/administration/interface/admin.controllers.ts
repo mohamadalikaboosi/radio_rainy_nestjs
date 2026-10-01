@@ -11,13 +11,14 @@ import { maskPhone } from '../../catalog/domain/phone';
 import { AdminAuthService } from '../application/admin-auth.service';
 import type { Response } from 'express';
 import { LiveService } from '../application/live.service';
-import { ReportQuery, reportQuerySchema, ReportsService } from '../application/reports.service';
-import { SystemReportService } from '../application/system-report.service';
+import { ReportQuery, ReportsService } from '../application/ports/reports.service';
+import { reportQuerySchema } from '../application/ports/reports.service';
+import { SystemReportService } from '../application/ports/system-report.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
 import { AuditService } from '../application/ports/audit.service';
-import { DashboardService } from '../application/dashboard.service';
+import { DashboardService } from '../application/ports/dashboard.service';
 import { RadioControlService } from '../../radio/application/radio-control.service';
-import { StatsService } from '../application/stats.service';
+import { StatsService } from '../application/ports/stats.service';
 import { TrackAdminService } from '../../catalog/application/track-admin.service';
 import { TrackQuery, TrackQueryRepository, trackQuerySchema } from '../../catalog/application/ports/track-query.repository';
 

@@ -1,7 +1,8 @@
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
-import { SettingsService } from './settings.service';
+import { SettingsService } from '../application/ports/settings.service';
+import { PgSettingsService } from '../infrastructure/settings.service';
 
 const KEY = 'ab'.repeat(32);
 
@@ -10,7 +11,7 @@ describe('SettingsService', () => {
   let svc: SettingsService;
   beforeEach(async () => {
     db = await freshDb();
-    svc = new SettingsService(db, new SessionCipher(KEY, 'app-settings'));
+    svc = new PgSettingsService(db, new SessionCipher(KEY, 'app-settings'));
   });
   afterEach(() => db.onModuleDestroy());
 
@@ -33,7 +34,7 @@ describe('SettingsService', () => {
   });
 
   it('whisper: DB values win over env fallback; key can be cleared; disabled when url empty', async () => {
-    const withEnv = new SettingsService(db, new SessionCipher(KEY, 'app-settings'), { whisper: { url: 'http://env/w', model: 'env-model' } });
+    const withEnv = new PgSettingsService(db, new SessionCipher(KEY, 'app-settings'), { whisper: { url: 'http://env/w', model: 'env-model' } });
     expect((await withEnv.whisper())?.url).toBe('http://env/w');
     expect((await withEnv.view()).whisper.source).toBe('environment');
     await withEnv.updateWhisper({ url: 'http://local:8000/v1/audio/transcriptions', model: 'Systran/faster-whisper-small', language: 'fa', sampleRate: 48000, timeoutSeconds: 900, apiKey: 'k1' }, 'a');

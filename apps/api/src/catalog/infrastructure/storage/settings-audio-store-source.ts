@@ -1,4 +1,4 @@
-import { SettingsService } from '../../../administration/application/settings.service';
+import { SettingsService } from '../../../administration/application/ports/settings.service';
 import { AudioStore, AudioStoreSource } from '../../application/ports/audio-store';
 import { MinioAudioStore } from './minio-audio-store';
 

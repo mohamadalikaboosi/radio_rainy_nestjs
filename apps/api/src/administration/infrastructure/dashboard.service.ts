@@ -1,3 +1,4 @@
+import { DashboardService } from '../application/ports/dashboard.service';
 import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
@@ -14,7 +15,7 @@ const COUNTS_TTL_MS = 5000;
 type Counts = Record<string, number>;
 
 @Injectable()
-export class DashboardService {
+export class PgDashboardService implements DashboardService {
   private readonly counts = new Map<string, { at: number; value: Promise<Counts> }>();
 
   constructor(

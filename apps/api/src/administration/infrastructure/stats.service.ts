@@ -1,22 +1,11 @@
+import { StatsService, HashtagStatRow } from '../application/ports/stats.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 
-export interface HashtagStatRow {
-  hashtagId: string;
-  value: string;
-  normalized: string;
-  trackCount: number;
-  playableCount: number;
-  failedLyricsCount: number;
-  plays: number;
-  lastPlayedAt: Date | null;
-  createdAt: Date;
-}
-
 /** Analytics come from a pre-aggregated table refreshed periodically, never computed per dashboard request. */
 @Injectable()
-export class StatsService {
-  private readonly logger = new Logger(StatsService.name);
+export class PgStatsService implements StatsService {
+  private readonly logger = new Logger(PgStatsService.name);
   private timer: NodeJS.Timeout | null = null;
 
   constructor(private readonly db: DatabaseService) {}

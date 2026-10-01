@@ -4,7 +4,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } f
 import { Api, TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { APP_CONFIG, AppConfig } from '../../../shared/infrastructure/config/app-config';
-import { SettingsService, TelegramCredentials } from '../../../administration/application/settings.service';
+import { SettingsService, TelegramCredentials } from '../../../administration/application/ports/settings.service';
 import { withTimeout } from '../../../shared/kernel/timeout';
 import { withFloodWait } from '../../application/flood-wait';
 import { maskPhone } from '../../domain/phone';

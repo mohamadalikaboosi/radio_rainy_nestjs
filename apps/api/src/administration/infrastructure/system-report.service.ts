@@ -1,10 +1,11 @@
+import { SystemReportService } from '../application/ports/system-report.service';
 import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable } from '@nestjs/common';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { JobQueue } from '../../lyrics/application/ports/job-queues';
 import { StationManager } from '../../radio/application/station-manager';
-import { SettingsService } from './settings.service';
+import { SettingsService } from '../application/ports/settings.service';
 import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
 import { TelegramConnection } from '../../catalog/application/ports/telegram-connection';
 
@@ -12,7 +13,7 @@ const CACHE_MS = 30_000;
 
 /** Health of every moving part in one place (queues, Telegram, stations, integrations, cache). */
 @Injectable()
-export class SystemReportService {
+export class PgSystemReportService implements SystemReportService {
   private cached: { at: number; value: unknown } | null = null;
 
   constructor(

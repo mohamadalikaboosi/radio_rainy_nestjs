@@ -5,7 +5,8 @@ import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { LexiconRepository } from '../../lyrics/application/lexicon';
 import { LanguageService } from '../../lyrics/application/language.service';
 import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
-import { LlmSettingsInput, llmSettingsSchema, SettingsService, StorageSettingsInput, storageSettingsSchema, TelegramSettingsInput, telegramSettingsSchema, WhisperSettingsInput, whisperSettingsSchema } from '../application/settings.service';
+import { LlmSettingsInput, SettingsService, StorageSettingsInput, TelegramSettingsInput, WhisperSettingsInput } from '../application/ports/settings.service';
+import { llmSettingsSchema, storageSettingsSchema, telegramSettingsSchema, whisperSettingsSchema } from '../application/ports/settings.service';
 import { AdminGuard, AdminRequest } from './admin.guard';
 import { AuditService } from '../application/ports/audit.service';
 

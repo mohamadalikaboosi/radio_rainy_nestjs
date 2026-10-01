@@ -1,4 +1,4 @@
-import { SettingsService } from '../../administration/application/settings.service';
+import { SettingsService } from '../../administration/application/ports/settings.service';
 
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';

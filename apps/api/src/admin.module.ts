@@ -28,16 +28,20 @@ import { AdminAdsController, AdminEngagementController, AdminSponsorsController 
 import { AdminLanguageController, AdminSettingsController } from './administration/interface/settings-language.controllers';
 import { AuditService } from './administration/application/ports/audit.service';
 import { PgAuditService } from './administration/infrastructure/audit.service';
-import { DashboardService } from './administration/application/dashboard.service';
+import { DashboardService } from './administration/application/ports/dashboard.service';
+import { PgDashboardService } from './administration/infrastructure/dashboard.service';
 import { LiveService } from './administration/application/live.service';
-import { ReportsService } from './administration/application/reports.service';
-import { SystemReportService } from './administration/application/system-report.service';
+import { ReportsService } from './administration/application/ports/reports.service';
+import { PgReportsService } from './administration/infrastructure/reports.service';
+import { SystemReportService } from './administration/application/ports/system-report.service';
+import { PgSystemReportService } from './administration/infrastructure/system-report.service';
 import { CurrentRadioService } from './radio/application/current-radio.service';
 import { BullMqJobQueue } from './lyrics/infrastructure/bullmq-job-queue';
-import { SettingsService } from './administration/application/settings.service';
+import { SettingsService } from './administration/application/ports/settings.service';
 import { AudioStoreSource } from './catalog/application/ports/audio-store';
 import { RadioControlService } from './radio/application/radio-control.service';
-import { StatsService } from './administration/application/stats.service';
+import { StatsService } from './administration/application/ports/stats.service';
+import { PgStatsService } from './administration/infrastructure/stats.service';
 import { TrackAdminService } from './catalog/application/track-admin.service';
 import { TrackQueryRepository } from './catalog/application/ports/track-query.repository';
 import { PgTrackQueryRepository } from './catalog/infrastructure/persistence/track-query.repository';
@@ -69,7 +73,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
     { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAuditService(db) },
     { provide: TrackQueryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgTrackQueryRepository(db) },
-    { provide: StatsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new StatsService(db) },
+    { provide: StatsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgStatsService(db) },
     { provide: 'STATS_LIFECYCLE', inject: [StatsService], useFactory: (s: StatsService) => new StatsLifecycle(s) },
     {
       provide: TrackAdminService,
@@ -89,9 +93,9 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     {
       provide: DashboardService,
       inject: [DatabaseService, RadioStateRepository, RadioConfigRepository, TrackRepository, PlaybackHistoryRepository, StationManager, ChannelRepository, TelegramClientManager],
-      useFactory: (db: DatabaseService, s: RadioStateRepository, c: RadioConfigRepository, t: TrackRepository, h: PlaybackHistoryRepository, sm: StationManager, ch: ChannelRepository, tg: TelegramClientManager) => new DashboardService(db, s, c, t, h, sm, ch, tg),
+      useFactory: (db: DatabaseService, s: RadioStateRepository, c: RadioConfigRepository, t: TrackRepository, h: PlaybackHistoryRepository, sm: StationManager, ch: ChannelRepository, tg: TelegramClientManager) => new PgDashboardService(db, s, c, t, h, sm, ch, tg),
     },
-    { provide: ReportsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new ReportsService(db) },
+    { provide: ReportsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgReportsService(db) },
     {
       provide: LiveService,
       inject: [ChannelRepository, RadioStateRepository, TrackRepository, PlaybackHistoryRepository, StationManager, CurrentRadioService],
@@ -100,7 +104,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     {
       provide: SystemReportService,
       inject: [DatabaseService, BullMqJobQueue, TelegramClientManager, StationManager, ChannelRepository, SettingsService, 'AUDIO_STORE_SOURCE'],
-      useFactory: (db: DatabaseService, q: BullMqJobQueue, tg: TelegramClientManager, sm: StationManager, ch: ChannelRepository, st: SettingsService, store: AudioStoreSource) => new SystemReportService(db, q, tg, sm, ch, st, store),
+      useFactory: (db: DatabaseService, q: BullMqJobQueue, tg: TelegramClientManager, sm: StationManager, ch: ChannelRepository, st: SettingsService, store: AudioStoreSource) => new PgSystemReportService(db, q, tg, sm, ch, st, store),
     },
     {
       provide: ChannelService,
