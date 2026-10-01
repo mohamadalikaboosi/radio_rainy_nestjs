@@ -27,6 +27,9 @@ export const envSchema = z.object({
   RADIO_PREFETCH_SECONDS: z.coerce.number().min(5).max(600).default(30),
   /** How long a transition waits for the pre-fetched track's first bytes before it gives up on it and picks another track. */
   RADIO_PREFETCH_TIMEOUT_SECONDS: z.coerce.number().min(1).max(120).default(15),
+  /** Data-saver stream (`?quality=low`): one extra ffmpeg per station, only while somebody listens to it. */
+  RADIO_LOW_QUALITY_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  RADIO_LOW_BITRATE_KBPS: z.coerce.number().int().min(16).max(96).default(48),
   RADIO_STREAM_BITRATE_KBPS: z.coerce.number().int().min(32).max(320).default(128),
 
   WHISPER_PROVIDER: z.enum(['openai-compatible']).default('openai-compatible'),

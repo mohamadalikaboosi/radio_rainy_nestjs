@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ChannelRepository } from '../channels/channel.repository';
 import { DatabaseService } from '../database/database.service';
@@ -78,7 +79,7 @@ export class DashboardService {
           running: this.stations.get(c.id) !== undefined,
           status: st.status,
           statusReason: st.statusReason,
-          listeners: this.stations.get(c.id)?.broadcaster.listenerCount ?? 0,
+          listeners: listenersOf(this.stations.get(c.id)),
           liveOnTelegram: { enabled: c.telegramLiveEnabled, status: c.liveStatus, error: c.liveError },
           current: cur ? { title: cur.title, artist: cur.artist } : null,
         };
@@ -100,7 +101,7 @@ export class DashboardService {
         statusReason: st.statusReason,
         transitionSeq: st.transitionSeq,
         configurationVersion: st.configurationVersion,
-        listeners: this.stations.get(channelId)?.broadcaster.listenerCount ?? 0,
+        listeners: listenersOf(this.stations.get(channelId)),
         current: current && st.startedAt && st.status === 'PLAYING'
           ? { trackId: current.id, title: current.title, artist: current.artist, duration: current.duration, startedAt: st.startedAt, position: Math.round(computePosition(st.startedAt, Date.now(), current.duration)) }
           : null,

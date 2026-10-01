@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { Controller, Get, Header, Headers, Inject, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
@@ -31,7 +32,7 @@ export class MetricsController {
     const snapshots: StationSnapshot[] = this.stations.active.map((s) => {
       const st = s.engine.getState();
       const cur = s.engine.current;
-      return { channelId: s.channel.id, slug: s.channel.slug, trackId: st.trackId, title: cur?.track.title ?? null, position: cur ? computePosition(cur.startedAt, now, cur.track.duration) : null, listeners: s.broadcaster.listenerCount };
+      return { channelId: s.channel.id, slug: s.channel.slug, trackId: st.trackId, title: cur?.track.title ?? null, position: cur ? computePosition(cur.startedAt, now, cur.track.duration) : null, listeners: listenersOf(s) };
     });
     return this.metrics.render(snapshots);
   }

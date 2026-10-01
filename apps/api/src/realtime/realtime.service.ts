@@ -124,7 +124,7 @@ export class RealtimeService {
       if ((this.perIp.get(ip) ?? 0) >= this.opt.maxPerIp) return reject(429, 'Too Many Requests');
       const channel = await this.deps.channels.bySlug(slug);
       if (!channel) return reject(404, 'Not Found');
-      this.wss.handleUpgrade(req, socket as never, head, (ws) => void (kind === 'audio' ? this.acceptAudio(ws, channel.id, ip) : this.accept(ws, channel.id, ip)));
+      this.wss.handleUpgrade(req, socket as never, head, (ws) => void (kind === 'audio' ? this.acceptAudio(ws, channel.id, ip, new URL(req.url ?? '/', 'http://x').searchParams.get('quality') === 'low') : this.accept(ws, channel.id, ip)));
     } catch (err) {
       this.logger.warn({ msg: 'websocket upgrade failed', err: String(err) });
       reject(400, 'Bad Request');
@@ -176,7 +176,7 @@ export class RealtimeService {
    * sent as binary MP3 frames. The ring buffer gives an instant start; a slow socket is dropped like a slow HTTP listener.
    * Only the leader instance broadcasts a station: elsewhere the socket is closed with 1013 and the player falls back to HTTP.
    */
-  private acceptAudio(ws: WebSocket, channelId: string, ip: string): void {
+  private acceptAudio(ws: WebSocket, channelId: string, ip: string, wantLow = false): void {
     this.perIp.set(ip, (this.perIp.get(ip) ?? 0) + 1);
     const station = this.deps.stations.get(channelId);
     let unsubscribe: (() => void) | null = null;
@@ -192,7 +192,8 @@ export class RealtimeService {
       ws.close(1013, 'station not broadcasting on this instance');
       return;
     }
-    unsubscribe = station.broadcaster.subscribe({
+    const source = wantLow && station.low?.available ? station.low : station.broadcaster; // data saver when asked (and possible)
+    unsubscribe = source.subscribe({
       write: (chunk) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (ws.bufferedAmount > this.opt.audioMaxBacklogBytes) {

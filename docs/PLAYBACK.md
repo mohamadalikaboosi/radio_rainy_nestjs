@@ -62,6 +62,15 @@ It is **not** recommended as the default: `<audio>` over HTTP already gives nati
 
 The WebSocket **control channel** (`/radio/:slug/ws`) is separate and always on: it carries state, counts and announcements, never audio.
 
+## Data-saver stream (low quality, for slow connections)
+
+`GET /radio/:slug/stream?quality=low` (and `/radio/:slug/audio?quality=low` over WebSocket) serves a lighter mono MP3 (`RADIO_LOW_BITRATE_KBPS`, default 48 kbps vs. 128+) so playback does not stall on poor networks.
+
+* **One ffmpeg per station, never per listener.** `LowQualityStream` re-encodes the station's normal stream once and fans it out through its own `Broadcaster` ring. It starts with the first low listener and stops with the last, so it costs nothing when nobody uses it. Listener counts, metrics and the panel include low listeners (`listenersOf`).
+* **Failure:** if ffmpeg cannot start or keeps crashing, `available` turns false for 60 s; `/radio/stations` reports `lowQuality: false` and `?quality=low` is answered with the normal stream, so nobody loses audio. A crashed encoder restarts with back-off; one that falls behind (stdin backlog > 512 KiB) is restarted instead of growing memory.
+* **Client:** the player shows a selector (Auto / High / Low) when the station offers it, remembered in `localStorage`. *Auto* starts on low if the browser reports `saveData` or a 2g/3g connection, and switches to low after 3 stalls (`waiting`/`stalled`) in 20 s. Changing the quality while playing rejoins the live edge on the other stream.
+* Disable with `RADIO_LOW_QUALITY_ENABLED=false`.
+
 ## Failure handling
 
 | Failure | Behaviour |

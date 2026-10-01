@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { Injectable } from '@nestjs/common';
 import { ChannelRepository } from '../channels/channel.repository';
 import { DatabaseService } from '../database/database.service';
@@ -42,7 +43,7 @@ export class SystemReportService {
       database: { ok: dbOk, latencyMs: dbMs, sizeMb: Math.round(dbSize / 1_048_576) },
       telegram: this.telegram.getStatus(),
       leader: this.stations.active.length > 0 || chans.every((c) => !c.started),
-      stations: chans.map((c) => ({ id: c.id, title: c.title, started: c.started, running: this.stations.get(c.id) !== undefined, listeners: this.stations.get(c.id)?.broadcaster.listenerCount ?? 0, live: { enabled: c.telegramLiveEnabled, status: c.liveStatus, error: c.liveError } })),
+      stations: chans.map((c) => ({ id: c.id, title: c.title, started: c.started, running: this.stations.get(c.id) !== undefined, listeners: listenersOf(this.stations.get(c.id)), live: { enabled: c.telegramLiveEnabled, status: c.liveStatus, error: c.liveError } })),
       queues,
       integrations: { whisper: view.whisper.enabled, llm: view.llm.enabled, audioCache: view.storage.active },
       audioCache: cache,

@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { Injectable } from '@nestjs/common';
 import { ChannelRepository } from '../channels/channel.repository';
 import { PlaybackHistoryRepository } from '../playback/playback-history.repository';
@@ -50,7 +51,7 @@ export class LiveService {
           status: st.status,
           statusReason: st.statusReason,
           transitionSeq: st.transitionSeq,
-          listeners: station?.broadcaster.listenerCount ?? 0,
+          listeners: listenersOf(station),
           liveOnTelegram: { enabled: c.telegramLiveEnabled, status: c.liveStatus, error: c.liveError },
           streamUrl: `/radio/${c.slug}/stream`,
           nowPlaying: cur && st.startedAt ? { ...brief(cur), startedAt: st.startedAt.toISOString(), position: Math.round(computePosition(st.startedAt, Date.now(), cur.duration)), lyricsStatus: cur.lyricsStatus, activeLine: active?.active?.text ?? null } : null,

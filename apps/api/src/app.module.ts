@@ -1,6 +1,7 @@
 import { Global, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { ManualOrAutoLiveApi } from './live/manual-live-api';
+import { DEFAULT_LOW, LowQualityStream } from './streaming/low-quality-stream';
 import { RadioMetrics } from './metrics/radio-metrics';
 import { DiskAudioCache } from './storage/disk-audio-cache';
 import { DiskCachingGateway } from './storage/disk-caching-gateway';
@@ -220,7 +221,8 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
             if (e.type === 'track-started' || e.type === 'ad-started' || e.type === 'ad-ended') void rt.publish({ type: 'current', channelId: channel.id }).catch(() => undefined);
           });
           const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS), channels, DEFAULT_LIVE_OPTIONS);
-          return { channel, broadcaster, engine, live };
+          const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
+          return { channel, broadcaster, engine, live, low };
         }),
     },
     {

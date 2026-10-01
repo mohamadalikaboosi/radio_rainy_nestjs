@@ -11,6 +11,8 @@ export interface Station {
   title: string;
   live: boolean;
   transport?: 'HTTP' | 'WEBSOCKET';
+  /** The station offers a lighter data-saver stream (`?quality=low`). */
+  lowQuality?: boolean;
 }
 
 export interface AdOnAir {

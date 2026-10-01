@@ -1,7 +1,7 @@
 import { Controller, Get, Header, Inject, Logger, NotFoundException, Optional, Param, Req, Res, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ChannelRepository, ChannelRow } from '../channels/channel.repository';
-import { StationManager } from '../playback/station-manager';
+import { listenersOf, StationManager } from '../playback/station-manager';
 import { EngagementSettingsRepository } from '../engagement/engagement-settings.repository';
 import { CurrentRadioService } from '../radio/current-radio.service';
 import { HttpListenerSink } from './http-listener-sink';
@@ -42,9 +42,9 @@ export class RadioController {
 
   @Get('stations')
   @Header('Cache-Control', 'no-store')
-  async list(): Promise<{ slug: string; title: string; live: boolean; transport: 'HTTP' | 'WEBSOCKET' }[]> {
+  async list(): Promise<{ slug: string; title: string; live: boolean; transport: 'HTTP' | 'WEBSOCKET'; lowQuality: boolean }[]> {
     const transports = (await this.engagement?.transports()) ?? new Map<string, 'HTTP' | 'WEBSOCKET'>();
-    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined, transport: transports.get(c.id) ?? 'HTTP' }));
+    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined, transport: transports.get(c.id) ?? 'HTTP', lowQuality: this.stations.get(c.id)?.low?.available ?? false }));
   }
 
   // ---- default station (backwards compatible URLs) ----
@@ -80,17 +80,20 @@ export class RadioController {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering (nginx) => lower latency
     res.setHeader('icy-name', channel.title || this.opts.stationName);
+    if (req.query.quality === 'low' && station.low?.available) res.setHeader('X-Audio-Quality', 'low');
     res.socket?.setNoDelay(true);
     res.socket?.setTimeout(0);
     res.flushHeaders();
 
     const sink = new HttpListenerSink(res, this.opts.maxBacklogBytes, (reason) => this.logger.warn({ msg: 'listener dropped', reason, channel: channel.slug, ip: req.ip }));
-    const unsubscribe = station.broadcaster.subscribe(sink);
-    this.logger.log({ msg: 'listener connected', channel: channel.slug, listeners: station.broadcaster.listenerCount });
+    // ?quality=low = the shared data-saver stream; if it cannot run (no ffmpeg) the normal stream is served instead.
+    const low = req.query.quality === 'low' && station.low?.available ? station.low : null;
+    const unsubscribe = low ? low.subscribe(sink) : station.broadcaster.subscribe(sink);
+    this.logger.log({ msg: 'listener connected', channel: channel.slug, quality: low ? 'low' : 'high', listeners: listenersOf(station) });
     // Every way a connection can end frees the subscription (no leaks).
     const cleanup = (): void => {
       unsubscribe();
-      this.logger.log({ msg: 'listener disconnected', channel: channel.slug, listeners: station.broadcaster.listenerCount });
+      this.logger.log({ msg: 'listener disconnected', channel: channel.slug, listeners: listenersOf(station) });
     };
     res.once('close', cleanup);
     res.once('error', cleanup);

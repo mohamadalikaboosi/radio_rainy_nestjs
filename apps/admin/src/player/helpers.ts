@@ -91,3 +91,46 @@ export function activeLineIndex(lines: readonly { start: number; end: number }[]
   const line = lines[found];
   return line && position < line.end + 1.5 ? found : -1; // a short grace after the line ends, then the gap is empty
 }
+
+export type QualityPref = 'auto' | 'high' | 'low';
+const QUALITY_KEY = 'rr_quality';
+
+export function loadQuality(): QualityPref {
+  try {
+    const v = localStorage.getItem(QUALITY_KEY);
+    return v === 'high' || v === 'low' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+export function saveQuality(q: QualityPref): void {
+  try {
+    localStorage.setItem(QUALITY_KEY, q);
+  } catch {
+    /* private mode: the choice just isn't remembered */
+  }
+}
+
+interface NetInfo {
+  saveData?: boolean;
+  effectiveType?: string;
+}
+/** Browser says the connection is slow or the user asked to save data (Network Information API, where available). */
+export function slowConnection(nav: { connection?: NetInfo } = navigator as unknown as { connection?: NetInfo }): boolean {
+  const c = nav.connection;
+  return !!c && (c.saveData === true || c.effectiveType === 'slow-2g' || c.effectiveType === '2g' || c.effectiveType === '3g');
+}
+
+/** Counts stalls in a sliding window: true once `limit` happened within `windowMs`. */
+export function stallTracker(limit = 3, windowMs = 20_000): (now?: number) => boolean {
+  let at: number[] = [];
+  return (now = Date.now()) => {
+    at = [...at.filter((t) => now - t < windowMs), now];
+    return at.length >= limit;
+  };
+}
+
+export function withQuery(url: string, params: Record<string, string>): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + new URLSearchParams(params).toString();
+}

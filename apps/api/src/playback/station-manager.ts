@@ -3,6 +3,7 @@ import { ChannelRepository, ChannelRow } from '../channels/channel.repository';
 import { TelegramLiveStreamer } from '../live/telegram-live-streamer';
 import { RadioStateRepository } from '../radio/radio-state.repository';
 import { Broadcaster } from '../streaming/broadcaster';
+import { LowQualityStream } from '../streaming/low-quality-stream';
 import { PlaybackEngine } from './playback-engine';
 
 /** Everything that makes one channel a running radio station. */
@@ -11,9 +12,14 @@ export interface Station {
   broadcaster: Broadcaster;
   engine: PlaybackEngine;
   live: TelegramLiveStreamer;
+  /** The data-saver stream (only encoded while somebody listens to it). */
+  low?: LowQualityStream;
   /** Revision of the manual live target this station's streamer connected with (a change => reconnect). */
   liveRev?: number;
 }
+
+/** Everyone listening to a station, on either quality. */
+export const listenersOf = (s: Pick<Station, 'broadcaster' | 'low'> | undefined): number => (s?.broadcaster.listenerCount ?? 0) + (s?.low?.listenerCount ?? 0);
 
 export type StationFactory = (channel: ChannelRow) => Station;
 
@@ -79,6 +85,7 @@ export class StationManager {
   private async stopStation(id: string, station: Station, rowExists: boolean): Promise<void> {
     this.stations.delete(id);
     await station.live.stop().catch((e: unknown) => this.logger.warn({ msg: 'live stop failed', channelId: id, err: String(e) }));
+    station.low?.shutdown();
     await station.engine.stop();
     if (rowExists) await this.state.setStatus(id, 'STOPPED', 'Station stopped by admin').catch((e: unknown) => this.logger.warn({ msg: 'state update failed', err: String(e) }));
     this.logger.log({ msg: 'station stopped', channelId: id });
@@ -90,6 +97,7 @@ export class StationManager {
       this.stations.delete(id);
       // Keep the Telegram live stream open across restarts of this process? No: close cleanly so it can be re-created.
       await station.live.stop(false).catch((e: unknown) => this.logger.warn({ msg: 'live stop failed', err: String(e) }));
+      station.low?.shutdown();
       await station.engine.stop();
     }
   }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { QualityPref, slowConnection, stallTracker, withQuery } from './helpers';
 import { WsAudioPlayer, wsAudioSupported } from './ws-audio';
 
 interface WebkitWindow extends Window {
@@ -9,7 +10,7 @@ interface WebkitWindow extends Window {
  * The <audio> element of the radio + a Web Audio analyser for the equalizer.
  * Pausing drops the source so that playing again joins the live edge instead of resuming stale buffered audio.
  */
-export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HTTP' | 'WEBSOCKET' | null; audioSocketUrl?: string | null } = {}) {
+export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HTTP' | 'WEBSOCKET' | null; audioSocketUrl?: string | null; quality?: QualityPref; lowAvailable?: boolean } = {}) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   /** What is actually delivering the audio right now (WEBSOCKET falls back to HTTP by itself when the browser/server can't do it). */
@@ -19,6 +20,12 @@ export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HT
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const [error, setError] = useState(false);
+  /** Auto mode gave up on the normal stream (repeated stalls) for this session. */
+  const [autoLow, setAutoLow] = useState(false);
+  const pref = opts.quality ?? 'auto';
+  const lowOk = opts.lowAvailable ?? false;
+  const quality: 'high' | 'low' = lowOk && (pref === 'low' || (pref === 'auto' && (autoLow || slowConnection()))) ? 'low' : 'high';
+  const lowParam = quality === 'low' ? { quality: 'low' } : null;
 
   const ensureAnalyser = useCallback((el: HTMLAudioElement): void => {
     if (ctx.current) {
@@ -56,12 +63,12 @@ export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HT
   const playHttp = useCallback((el: HTMLAudioElement): void => {
     if (!streamUrl) return;
     setActive('HTTP');
-    el.src = `${streamUrl}?ts=${Date.now()}`;
+    el.src = withQuery(streamUrl, { ...lowParam, ts: String(Date.now()) });
     void el.play().then(() => setPlaying(true)).catch(() => {
       setPlaying(false);
       setError(true);
     });
-  }, [streamUrl]);
+  }, [streamUrl, lowParam?.quality]);
 
   const play = useCallback((): void => {
     const el = audio.current;
@@ -70,7 +77,7 @@ export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HT
     ensureAnalyser(el);
     if (opts.transport === 'WEBSOCKET' && opts.audioSocketUrl && !wsBroken.current && wsAudioSupported()) {
       setActive('WEBSOCKET');
-      const p = new WsAudioPlayer(el, opts.audioSocketUrl, () => {
+      const p = new WsAudioPlayer(el, lowParam ? withQuery(opts.audioSocketUrl, lowParam) : opts.audioSocketUrl, () => {
         // not supported / closed / failed: keep listening over plain HTTP instead (and don't retry WebSocket this session)
         wsBroken.current = true;
         wsPlayer.current = null;
@@ -83,7 +90,7 @@ export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HT
       return;
     }
     playHttp(el);
-  }, [streamUrl, opts.transport, opts.audioSocketUrl, ensureAnalyser, playHttp]);
+  }, [streamUrl, opts.transport, opts.audioSocketUrl, lowParam?.quality, ensureAnalyser, playHttp]);
 
   const toggle = useCallback((): void => (playing ? stop() : play()), [playing, play, stop]);
 
@@ -106,9 +113,40 @@ export function usePlayerAudio(streamUrl: string | null, opts: { transport?: 'HT
     };
   }, []);
 
+  // quality changed while listening (selector, or auto mode gave up): rejoin the live edge on the other stream
+  const lastQuality = useRef(quality);
+  const playRef = useRef(play);
+  playRef.current = play;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  useEffect(() => {
+    if (lastQuality.current === quality) return;
+    lastQuality.current = quality;
+    if (!playingRef.current) return;
+    wsPlayer.current?.stop();
+    wsPlayer.current = null;
+    playRef.current();
+  }, [quality]);
+
+  // auto mode: repeated stalls = the connection can't keep up -> switch to the light stream
+  useEffect(() => {
+    const el = audio.current;
+    if (!el || pref !== 'auto' || !lowOk || quality === 'low') return;
+    const stalled = stallTracker();
+    const onStall = (): void => {
+      if (playingRef.current && stalled()) setAutoLow(true);
+    };
+    el.addEventListener('waiting', onStall);
+    el.addEventListener('stalled', onStall);
+    return () => {
+      el.removeEventListener('waiting', onStall);
+      el.removeEventListener('stalled', onStall);
+    };
+  }, [pref, lowOk, quality]);
+
   useEffect(() => () => void ctx.current?.close().catch(() => undefined), []);
 
-  return { audio, playing, analyser, error, toggle, stop, play, active };
+  return { audio, playing, analyser, error, toggle, stop, play, active, quality, autoSwitched: autoLow };
 }
 
 /** Lock-screen / headset controls and metadata (Media Session API). */

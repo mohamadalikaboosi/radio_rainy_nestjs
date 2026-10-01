@@ -1,3 +1,4 @@
+import { listenersOf } from './station-manager';
 import { Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { StationManager } from './station-manager';
@@ -29,7 +30,7 @@ export class ListenerSampler {
     const slot = new Date(Math.floor(now.getTime() / this.everyMs) * this.everyMs);
     let n = 0;
     for (const s of this.stations.active) {
-      await this.db.query('INSERT INTO listener_samples (channel_id, at, listeners) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [s.channel.id, slot, s.broadcaster.listenerCount]);
+      await this.db.query('INSERT INTO listener_samples (channel_id, at, listeners) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [s.channel.id, slot, listenersOf(s)]);
       n++;
     }
     if (now.getTime() - this.lastCleanup > 3_600_000) {

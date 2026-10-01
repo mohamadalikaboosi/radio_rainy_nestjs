@@ -1,3 +1,6 @@
+import { chmodSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { get as httpGet, IncomingMessage } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
@@ -7,6 +10,7 @@ import { buildHarness, Harness, waitFor } from '../../test/engine-harness';
 import { createRadioApp } from '../../test/radio-app';
 import { freshDb } from '../../test/test-db';
 import { DatabaseService } from '../database/database.service';
+import { LowQualityStream, DEFAULT_LOW } from './low-quality-stream';
 import { LyricsRepository } from '../lyrics/lyrics.repository';
 import { TelegramTrackDiscovery } from '../telegram/track-discovery';
 import { TrackRepository } from '../track/track.repository';
@@ -47,6 +51,55 @@ describe('public radio API (e2e, real HTTP)', () => {
       });
       req.on('error', reject);
     });
+
+  const withLow = async (ffmpegPath: string): Promise<LowQualityStream> => {
+    await app.close();
+    const low = new LowQualityStream(h.broadcaster, { ...DEFAULT_LOW, ffmpegPath, restartMinMs: 20 });
+    app = await createRadioApp(db, h, low);
+    base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    return low;
+  };
+  const lowListener = (): Promise<{ res: IncomingMessage; bytes: () => number }> =>
+    new Promise((resolve, reject) => {
+      const req = httpGet(`${base}/radio/stream?quality=low`, (res) => {
+        let n = 0;
+        res.on('data', (d: Buffer) => (n += d.length));
+        open.push(res);
+        resolve({ res, bytes: () => n });
+      });
+      req.on('error', reject);
+    });
+
+  it('?quality=low is served by the shared data-saver encoder, ONE feed for many listeners', async () => {
+    const cat = join(tmpdir(), `cat-${process.pid}.js`);
+    writeFileSync(cat, "#!/usr/bin/env node\nprocess.stdin.pipe(process.stdout);\n");
+    chmodSync(cat, 0o755);
+    const low = await withLow(cat);
+    h.engine.start();
+    const [a, b] = await Promise.all([lowListener(), lowListener()]);
+    expect(a.res.headers['x-audio-quality']).toBe('low');
+    await waitFor(() => a.bytes() > 0 && b.bytes() > 0);
+    expect(low.listenerCount).toBe(2);
+    expect(h.broadcaster.listenerCount).toBe(1);
+    a.res.destroy();
+    b.res.destroy();
+    await waitFor(() => low.listenerCount === 0 && h.broadcaster.listenerCount === 0);
+    expect(low.running).toBe(false);
+    const list = await request(base).get('/radio/stations');
+    expect(list.status).toBe(200);
+  });
+
+  it('falls back to the normal stream when the data-saver encoder is unavailable', async () => {
+    const low = await withLow('/nonexistent/ffmpeg');
+    h.engine.start();
+    const first = await lowListener(); // ffmpeg fails to start -> becomes unavailable
+    await waitFor(() => !low.available);
+    first.res.destroy();
+    const second = await lowListener();
+    expect(second.res.headers['x-audio-quality']).toBeUndefined();
+    await waitFor(() => second.bytes() > 0);
+    expect(h.broadcaster.listenerCount).toBe(1);
+  });
 
   it('503 while the engine is not running', async () => {
     await request(base).get('/radio/stream').expect(503);

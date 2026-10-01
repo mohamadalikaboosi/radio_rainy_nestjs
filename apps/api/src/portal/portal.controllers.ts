@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -239,7 +240,7 @@ export class PortalController {
           [c.id],
         );
         const row = s.rows[0];
-        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: this.stations.get(c.id)?.broadcaster.listenerCount ?? 0, plays24h: Number(row?.plays ?? 0), peakListeners24h: row?.peak ?? 0, avgListeners24h: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
+        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: Number(row?.plays ?? 0), peakListeners24h: row?.peak ?? 0, avgListeners24h: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
       }),
     );
   }

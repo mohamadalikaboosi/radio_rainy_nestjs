@@ -1,3 +1,4 @@
+import { listenersOf } from '../playback/station-manager';
 import { Logger } from '@nestjs/common';
 import { StationManager } from '../playback/station-manager';
 import { RealtimeBus } from './events';
@@ -30,7 +31,7 @@ export class ListenerCountPublisher {
   async run(): Promise<void> {
     const t = this.now();
     for (const s of this.stations.active) {
-      const count = s.broadcaster.listenerCount;
+      const count = listenersOf(s);
       const prev = this.last.get(s.channel.id);
       if (prev && prev.count === count && t - prev.at < this.refreshMs) continue;
       this.last.set(s.channel.id, { count, at: t });

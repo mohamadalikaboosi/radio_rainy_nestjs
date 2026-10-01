@@ -4,8 +4,8 @@ import { mmss } from '../format';
 import { LanguageSwitcher, useT } from '../i18n';
 import { Equalizer } from './Equalizer';
 import './player.css';
-import { activeLineIndex, hueOf, pickSponsor, secondsSince, secondsUntil } from './helpers';
-import type { SponsorView } from './helpers';
+import { activeLineIndex, hueOf, loadQuality, pickSponsor, saveQuality, secondsSince, secondsUntil } from './helpers';
+import type { QualityPref, SponsorView } from './helpers';
 import type { AdOnAir, Current } from './useRadio';
 import { useRadio } from './useRadio';
 import { wsUrl } from './useRealtime';
@@ -151,7 +151,9 @@ export function Player() {
   const t = useT();
   const r = useRadio();
   const transport = r.realtime.transport ?? r.stations?.find((s) => s.slug === r.slug)?.transport ?? 'HTTP';
-  const { audio, playing, analyser, error, toggle, stop, play, active: activeTransport } = usePlayerAudio(r.base ? `${r.base}/stream` : null, { transport, audioSocketUrl: r.slug ? wsUrl(`/radio/${r.slug}/audio`) : null });
+  const lowAvailable = r.stations?.find((s) => s.slug === r.slug)?.lowQuality ?? false;
+  const [qualityPref, setQualityPref] = useState<QualityPref>(loadQuality);
+  const { audio, playing, analyser, error, toggle, stop, play, active: activeTransport, quality } = usePlayerAudio(r.base ? `${r.base}/stream` : null, { transport, audioSocketUrl: r.slug ? wsUrl(`/radio/${r.slug}/audio`) : null, quality: qualityPref, lowAvailable });
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const install = useInstallPrompt();
   const now = useNow();
@@ -198,6 +200,23 @@ export function Player() {
           <a className="pl-chip" href="/partner">
             {t('player.advertise')}
           </a>
+          {lowAvailable && (
+            <select
+              className="pl-chip pl-select"
+              value={qualityPref}
+              aria-label={t('player.quality')}
+              onChange={(e) => {
+                const q = e.target.value as QualityPref;
+                setQualityPref(q);
+                saveQuality(q);
+              }}
+            >
+              <option value="auto">{t('player.qualityAuto')}</option>
+              <option value="high">{t('player.qualityHigh')}</option>
+              <option value="low">{t('player.qualityLow')}</option>
+            </select>
+          )}
+          {lowAvailable && quality === 'low' && playing && <span className="pl-chip" title={t('player.lowHint')}>🐢 {t('player.lowBadge')}</span>}
           <LanguageSwitcher className="pl-chip pl-select" />
           {r.stations && r.stations.length > 1 && (
             <select className="pl-chip pl-select" value={r.slug ?? ''} onChange={(e) => switchStation(e.target.value)} aria-label={t('player.station')}>
