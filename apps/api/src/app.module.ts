@@ -215,7 +215,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
             broadcaster,
             metrics: metrics.forStation(channel.id),
             ads: new DbAdSource(adsRepo, platform, engagement, new FfmpegLiveTranscoder(c.FFMPEG_PATH), c.RADIO_STREAM_BITRATE_KBPS),
-            options: { burstSeconds: c.RADIO_PREBUFFER_SECONDS, sliceBytes: 4096, preselectSeconds: c.RADIO_PREFETCH_SECONDS, prefetchTimeoutMs: c.RADIO_PREFETCH_TIMEOUT_SECONDS * 1000, validateAudio: true, prefetchBytes: 256 * 1024, idleRetryMs: 5000, maxBackoffMs: 30_000, now: realClock.now, sleep: realClock.sleep },
+            options: { burstSeconds: c.RADIO_PREBUFFER_SECONDS, sliceBytes: 4096, preselectSeconds: c.RADIO_PREFETCH_SECONDS, prefetchTimeoutMs: c.RADIO_PREFETCH_TIMEOUT_SECONDS * 1000, validateAudio: true, prefetchBytes: c.RADIO_BUFFER_WHOLE_TRACK ? 64 * 1024 * 1024 : 256 * 1024, idleRetryMs: 5000, maxBackoffMs: 30_000, now: realClock.now, sleep: realClock.sleep },
           });
           // Tell every instance's live sockets when the track or the ad on air changes (the state row is already updated).
           engine.subscribe((e) => {

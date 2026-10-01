@@ -102,8 +102,9 @@ The WebSocket **control channel** (`/radio/:slug/ws`) is separate and always on:
 | Variable | Default | Meaning |
 |---|---|---|
 | `RADIO_PREBUFFER_SECONDS` | 2 | lead/burst for new listeners (lower = lower latency) |
-| `RADIO_PREFETCH_SECONDS` | 30 | select + download the next track this long before the current one ends |
-| `RADIO_PREFETCH_TIMEOUT_SECONDS` | 15 | wait for the prepared track's first bytes before replacing it |
+| `RADIO_BUFFER_WHOLE_TRACK` | true | the whole next track is downloaded while the current one plays; a track goes on air only when fully buffered (no stalls mid-track, steady Telegram live) |
+| `RADIO_PREFETCH_SECONDS` | 90 | select + download the next track this long before the current one ends |
+| `RADIO_PREFETCH_TIMEOUT_SECONDS` | 60 | wait for the prepared track's first bytes before replacing it |
 | `AUDIO_CACHE_DIR` | `$TMP_DIR/audio-cache` | cache directory (a volume in Docker) |
 | `AUDIO_CACHE_MAX_MB` | 1024 | size limit, LRU eviction; `0` disables |
 | `AUDIO_CACHE_CONCURRENT_FILLS` | 2 | parallel Telegram downloads |

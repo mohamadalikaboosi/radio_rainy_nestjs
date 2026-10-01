@@ -24,9 +24,11 @@ export const envSchema = z.object({
   /** Seconds of audio sent in a burst to new listeners; lower = lower latency. */
   RADIO_PREBUFFER_SECONDS: z.coerce.number().min(0).max(30).default(2),
   /** Start selecting + downloading the NEXT track this many seconds before the current one ends. */
-  RADIO_PREFETCH_SECONDS: z.coerce.number().min(5).max(600).default(30),
+  RADIO_PREFETCH_SECONDS: z.coerce.number().min(5).max(600).default(90),
+  /** The next track is downloaded COMPLETELY (into memory/disk cache) before it goes on air; the current track is never waited for. */
+  RADIO_BUFFER_WHOLE_TRACK: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   /** How long a transition waits for the pre-fetched track's first bytes before it gives up on it and picks another track. */
-  RADIO_PREFETCH_TIMEOUT_SECONDS: z.coerce.number().min(1).max(120).default(15),
+  RADIO_PREFETCH_TIMEOUT_SECONDS: z.coerce.number().min(1).max(300).default(60),
   /** Data-saver stream (`?quality=low`): one extra ffmpeg per station, only while somebody listens to it. */
   RADIO_LOW_QUALITY_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   RADIO_LOW_BITRATE_KBPS: z.coerce.number().int().min(16).max(96).default(48),
