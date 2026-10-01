@@ -58,6 +58,7 @@ export class PrefetchedAudio implements OpenedAudio {
   private started: Promise<void> | null = null;
   private consumed = false;
   private readonly iterator: AsyncIterator<Uint8Array>;
+  private headWaiters: (() => void)[] = [];
 
   constructor(private readonly inner: OpenedAudio, private readonly maxBytes: number) {
     this.iterator = inner.bytes[Symbol.asyncIterator]();
@@ -92,6 +93,37 @@ export class PrefetchedAudio implements OpenedAudio {
     }
   }
 
+  /** True once enough bytes arrived to start playing (first 256 KiB, the end of the file, or a failure). */
+  private get headDone(): boolean {
+    return this.bufferedBytes >= Math.min(this.maxBytes, 256 * 1024) || this.ended || this.error !== undefined;
+  }
+
+  /** Like whenReady, but only waits for the FIRST bytes (not the whole read-ahead). */
+  async whenHead(timeoutMs: number): Promise<'READY' | 'FAILED' | 'TIMEOUT'> {
+    void this.start();
+    let timer: NodeJS.Timeout | undefined;
+    const done = new Promise<'READY' | 'FAILED'>((resolve) => {
+      const check = (): void => resolve(this.error !== undefined ? 'FAILED' : 'READY');
+      if (this.headDone) return check();
+      this.headWaiters.push(check);
+    });
+    const timeout = new Promise<'TIMEOUT'>((resolve) => {
+      timer = setTimeout(() => resolve('TIMEOUT'), timeoutMs);
+    });
+    try {
+      return await Promise.race([done, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private wakeHead(): void {
+    if (!this.headDone) return;
+    const w = this.headWaiters;
+    this.headWaiters = [];
+    for (const f of w) f();
+  }
+
   start(): Promise<void> {
     this.started ??= (async () => {
       try {
@@ -99,13 +131,17 @@ export class PrefetchedAudio implements OpenedAudio {
           const r = await this.iterator.next();
           if (r.done) {
             this.ended = true;
+            this.wakeHead();
             return;
           }
           this.buffered.push(r.value);
           this.bufferedBytes += r.value.length;
+          this.wakeHead();
         }
       } catch (err) {
         this.error = err;
+      } finally {
+        this.wakeHead();
       }
     })();
     return this.started;

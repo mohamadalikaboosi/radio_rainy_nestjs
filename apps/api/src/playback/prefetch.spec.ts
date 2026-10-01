@@ -96,6 +96,25 @@ describe('PlaybackEngine prefetch, fail-over, state and metrics', () => {
     expect(await failures(3)).toBe(0);
   });
 
+  it('whole-track buffering never leaves the radio silent: a download slower than playback just streams while it plays', async () => {
+    for (const i of [1, 2, 3]) addTrack(gw, i);
+    await discovery.sync('1001');
+    const original = gw.download.bind(gw);
+    gw.download = async function* (channelId, id, opts = {}) {
+      let n = 0;
+      for await (const c of original(channelId, id, opts)) {
+        if (n++ > 0) await new Promise((r) => setTimeout(r, 1500)); // everything after the first chunk is slower than real time
+        yield c;
+      }
+    };
+    boot({ bufferWholeTrack: true, prefetchBytes: 64 * 1024 * 1024, prefetchTimeoutMs: 600 });
+    listen();
+    h.engine.start();
+    await waitFor(async () => (await plays()) >= 3, 15_000);
+    await h.engine.stop();
+    expect(events.filter((e) => e.type === 'prefetch-failover')).toHaveLength(0);
+  });
+
   it('corrupt audio (no MPEG frame) never goes on air and is counted against the track', async () => {
     addTrack(gw, 1);
     addTrack(gw, 2, Buffer.alloc(20000, 9)); // garbage

@@ -18,6 +18,8 @@ export interface EngineOptions {
   /** Start selecting/prefetching the next track when this many seconds remain. */
   preselectSeconds: number;
   prefetchBytes: number;
+  /** Wait for the whole next track to be downloaded before it goes on air (bounded; a slow download then simply streams while it plays). */
+  bufferWholeTrack?: boolean;
   /** How long to wait before re-checking when nothing is playable. */
   idleRetryMs: number;
   maxBackoffMs: number;
@@ -373,7 +375,7 @@ export class PlaybackEngine {
           const p = this.plan;
           this.plan = null;
           await this.d.state.setNext(this.d.channelId, null);
-          const bad = await this.verify(p);
+          const bad = await this.verify(p, 0); // already waited for in the background; never wait again while the radio is silent
           if (bad === null || (bad === 'FAILED' && isOutage(p.audio.failure))) return p; // an outage is handled (with back-off) by playOne
           await this.rejectPlan(p, bad);
           exclude.push(p.track.id);
@@ -433,7 +435,8 @@ export class PlaybackEngine {
     await this.d.state.setNext(this.d.channelId, null).catch((e: unknown) => this.logger.warn({ msg: 'clear next failed', err: String(e) }));
   }
 
-  private planNext(): void {
+  /** @param remainingSeconds how long the current track still plays: the whole next track may take that long to download. */
+  private planNext(remainingSeconds = 0): void {
     if (this.plan || this.planPromise || this.forcedTrackId) return;
     this.planPromise = (async () => {
       try {
@@ -452,7 +455,7 @@ export class PlaybackEngine {
             return;
           }
           // The next track must be READY (first bytes in hand) before the current one ends; if it cannot be, pick another now.
-          const bad = await this.verify(p);
+          const bad = await this.verify(p, Math.max(0, remainingSeconds - 3) * 1000);
           if (bad === null) {
             this.plan = p;
             await this.d.state.setNext(this.d.channelId, p.track.id);
@@ -474,13 +477,23 @@ export class PlaybackEngine {
     })();
   }
 
-  /** Waits (bounded) for a prepared track's first bytes and sanity-checks them. Returns why it is unusable, or null. */
-  private async verify(p: Plan): Promise<'FAILED' | 'TIMEOUT' | 'CORRUPT' | null> {
-    const ready = await p.audio.whenReady(this.d.options.prefetchTimeoutMs ?? 15_000);
+  /**
+   * Waits (bounded) for a prepared track's first bytes and sanity-checks them. Returns why it is unusable, or null.
+   * With `bufferWholeTrack` it then also waits up to `fullWaitMs` for the COMPLETE download; running out of that time is not a failure
+   * (the track keeps downloading while it plays), so a slow Telegram can never leave the radio silent.
+   */
+  private async verify(p: Plan, fullWaitMs?: number): Promise<'FAILED' | 'TIMEOUT' | 'CORRUPT' | null> {
+    const whole = this.d.options.bufferWholeTrack === true;
+    const timeout = this.d.options.prefetchTimeoutMs ?? 15_000;
+    const ready = whole ? await p.audio.whenHead(timeout) : await p.audio.whenReady(timeout);
     if (ready !== 'READY') return ready;
     if (this.d.options.validateAudio) {
       const head = p.audio.head(64 * 1024);
       if (head.length > 0 && !hasMpegFrameSync(head)) return 'CORRUPT';
+    }
+    if (whole) {
+      const full = await p.audio.whenReady(fullWaitMs ?? timeout);
+      if (full === 'FAILED') return 'FAILED';
     }
     return null;
   }
@@ -537,7 +550,7 @@ export class PlaybackEngine {
         bytes += slice.length;
         this.status = 'PLAYING';
         this.send(slice);
-        if (track.duration !== null && this.timeline.sentSeconds - startSent >= track.duration - o.preselectSeconds) this.planNext();
+        if (track.duration !== null && this.timeline.sentSeconds - startSent >= track.duration - o.preselectSeconds) this.planNext(Math.max(0, track.duration - (this.timeline.sentSeconds - startSent)));
       }
       if (ac.signal.aborted) reason = this.abortReason ?? 'ADMIN';
       else if (bytes === 0) throw new Error('track produced no audio data');
