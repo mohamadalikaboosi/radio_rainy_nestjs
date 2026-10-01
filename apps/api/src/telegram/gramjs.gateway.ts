@@ -12,8 +12,11 @@ import {
   TelegramMediaError,
 } from './telegram.types';
 
-/** 128 KiB requests: small first chunk = low time-to-first-byte for the radio (must be a multiple of 4096). */
-const DOWNLOAD_REQUEST_SIZE = 128 * 1024;
+/**
+ * Bytes per upload.getFile request. A download is one request after another, so its speed is (request size / round-trip time):
+ * 128 KiB gave only ~1 MB/s on a 120 ms link, 512 KiB is four times faster. Telegram needs a power of two between 64 KiB and 1 MiB.
+ */
+export const DEFAULT_DOWNLOAD_REQUEST_KB = 512;
 
 /** Converts a raw MTProto message into our neutral type. Returns null for non-audio (voice notes, video, text...). */
 export function toAudioMessage(msg: Api.Message, channelId: string, username?: string): TelegramAudioMessage | null {
@@ -69,6 +72,7 @@ export class GramJsTelegramGateway implements TelegramGateway {
   constructor(
     private readonly manager: TelegramClientManager,
     private readonly directory: ChannelDirectory,
+    private readonly requestKb: number = DEFAULT_DOWNLOAD_REQUEST_KB,
   ) {}
 
   async resolveChannel(reference: string): Promise<TelegramChannelInfo> {
@@ -154,15 +158,29 @@ export class GramJsTelegramGateway implements TelegramGateway {
     const message = await this.fetchRaw(channelId, messageId);
     if (!message || !message.media) throw new TelegramMediaError(`Message ${messageId} not found or has no media`, false);
 
+    // Telegram wants the offset to be a multiple of the request size: start at the block boundary and drop the bytes already received
+    const requestSize = this.requestKb * 1024;
+    const wanted = opts.offset ?? 0;
+    const start = Math.floor(wanted / requestSize) * requestSize;
+    let skip = wanted - start;
     const iter = client.iterDownload({
       file: message.media,
-      offset: bigInt(opts.offset ?? 0),
-      requestSize: DOWNLOAD_REQUEST_SIZE,
+      offset: bigInt(start),
+      requestSize,
       msgData: [entity, messageId],
     });
     try {
       for await (const chunk of iter) {
         if (opts.signal?.aborted) return;
+        if (skip > 0) {
+          if (chunk.length <= skip) {
+            skip -= chunk.length;
+            continue;
+          }
+          yield chunk.subarray(skip);
+          skip = 0;
+          continue;
+        }
         yield chunk;
       }
     } catch (err) {

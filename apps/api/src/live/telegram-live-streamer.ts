@@ -4,6 +4,7 @@ import { Writable } from 'node:stream';
 import { ChannelRepository } from '../channels/channel.repository';
 import { Broadcaster } from '../streaming/broadcaster';
 import { HttpListenerSink } from '../streaming/http-listener-sink';
+import { drawtextFilter, NowPlayingOverlay } from './now-playing-text';
 
 /** RTMP ingest of a Telegram channel's live stream (the "Stream with..." feature of Telegram voice chats). */
 export interface RtmpTarget {
@@ -32,7 +33,7 @@ export interface RtmpPublisher {
 }
 
 /** Pure: the ffmpeg arguments used to publish MP3 audio (stdin) + a still frame to Telegram over RTMP(S). */
-export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128): string[] {
+export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128, overlay?: NowPlayingOverlay): string[] {
   const base = target.url.endsWith('/') ? target.url : `${target.url}/`;
   return [
     '-nostdin', '-loglevel', 'warning', '-progress', 'pipe:1', '-nostats',
@@ -40,6 +41,7 @@ export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128):
     '-re', '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=1280x720:r=25', // Telegram requires a video track: a static dark frame
     '-re', '-thread_queue_size', '1024', '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
+    ...(overlay ? ['-vf', drawtextFilter(overlay)] : []),
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-profile:v', 'main',
     '-g', '50', '-keyint_min', '50', '-sc_threshold', '0', '-b:v', '600k', '-maxrate', '600k', '-bufsize', '1200k', // keyframe every 2 s, constant rate
     '-c:a', 'aac', '-b:a', `${audioBitrateKbps}k`, '-ar', '48000', '-ac', '2',
@@ -49,12 +51,15 @@ export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128):
 }
 
 export class FfmpegRtmpPublisher implements RtmpPublisher {
-  constructor(private readonly ffmpegPath = 'ffmpeg', private readonly bitrateKbps = 128) {}
+  /** Set when this ffmpeg build has no `drawtext`: the stream then continues without the text instead of not starting at all. */
+  private overlayBroken = false;
+
+  constructor(private readonly ffmpegPath = 'ffmpeg', private readonly bitrateKbps = 128, private readonly overlay?: NowPlayingOverlay) {}
 
   publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks: PublishHooks = {}): Promise<{ code: number | null; stderr: string }> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return resolve({ code: null, stderr: '' });
-      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, this.bitrateKbps), { stdio: ['pipe', 'pipe', 'pipe'] });
+      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, this.bitrateKbps, this.overlayBroken ? undefined : this.overlay), { stdio: ['pipe', 'pipe', 'pipe'] });
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => {
         const text = d.toString();
@@ -82,6 +87,10 @@ export class FfmpegRtmpPublisher implements RtmpPublisher {
         reject(new Error(err.code === 'ENOENT' ? `ffmpeg not found at "${this.ffmpegPath}"` : err.message));
       });
       proc.on('close', (code) => {
+        if (this.overlay && !this.overlayBroken && /No such filter.*drawtext|drawtext.*(not found|Error initializing)|Cannot find a valid font|Could not load font/i.test(stderr)) {
+          this.overlayBroken = true;
+          hooks.onLog?.('this ffmpeg cannot draw text (drawtext/font missing): going on without the now-playing text');
+        }
         detach();
         signal.removeEventListener('abort', kill);
         resolve({ code, stderr });

@@ -14,7 +14,7 @@ RUN pnpm --filter @radio_rainy/api --prod --legacy deploy /out/api
 
 FROM node:22-bookworm-slim
 # ffmpeg: format conversion, Whisper audio (mono FLAC) and the Telegram live stream (RTMPS)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates wget \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3000 TMP_DIR=/tmp/radio_rainy ADMIN_UI_DIR=/app/admin
 WORKDIR /app/api

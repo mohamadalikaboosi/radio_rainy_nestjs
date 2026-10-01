@@ -33,6 +33,7 @@ import { LexiconRepository } from './language/lexicon';
 import { LanguageService } from './language/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
+import { NowPlayingText } from './live/now-playing-text';
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
 import { AudioStoreSource } from './storage/audio-store';
@@ -143,7 +144,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     },
     { provide: TelegramSessionStore, inject: [DatabaseService, SessionCipher], useFactory: (db: DatabaseService, c: SessionCipher) => new TelegramSessionStore(db, c) },
     { provide: TelegramClientManager, inject: [APP_CONFIG, TelegramSessionStore, SettingsService], useFactory: (c: AppConfig, s: TelegramSessionStore, st: SettingsService) => new TelegramClientManager(c, s, st) },
-    { provide: GramJsTelegramGateway, inject: [TelegramClientManager, ChannelRepository], useFactory: (m: TelegramClientManager, ch: ChannelRepository) => new GramJsTelegramGateway(m, ch) },
+    { provide: GramJsTelegramGateway, inject: [TelegramClientManager, ChannelRepository, APP_CONFIG], useFactory: (m: TelegramClientManager, ch: ChannelRepository, c: AppConfig) => new GramJsTelegramGateway(m, ch, c.TELEGRAM_DOWNLOAD_REQUEST_KB) },
     { provide: RadioMetrics, useFactory: () => new RadioMetrics() },
     { provide: DiskAudioCache, inject: [APP_CONFIG, RadioMetrics], useFactory: (c: AppConfig, m: RadioMetrics) => new DiskAudioCache({ dir: c.AUDIO_CACHE_DIR ?? join(c.TMP_DIR, 'audio-cache'), maxBytes: c.AUDIO_CACHE_MAX_MB * 1024 * 1024, maxConcurrentFills: c.AUDIO_CACHE_CONCURRENT_FILLS }, m.cache) },
     { provide: 'AUDIO_STORE_SOURCE', inject: [SettingsService], useFactory: (s: SettingsService): AudioStoreSource => new SettingsAudioStoreSource(s) },
@@ -220,7 +221,14 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
           engine.subscribe((e) => {
             if (e.type === 'track-started' || e.type === 'ad-started' || e.type === 'ad-ended') void rt.publish({ type: 'current', channelId: channel.id }).catch(() => undefined);
           });
-          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS), channels, DEFAULT_LIVE_OPTIONS);
+          // the title + artist of the music on air are drawn on the Telegram live video
+          const nowPlaying = new NowPlayingText(join(c.TMP_DIR, 'live'), channel.id, channel.title);
+          engine.subscribe((e) => {
+            if (e.type === 'track-started') {
+              void t.findById(e.trackId).then((tr) => tr && nowPlaying.set(tr.title, tr.artist ?? null)).catch(() => undefined);
+            } else if (e.type === 'ad-started') nowPlaying.set(channel.title, null);
+          });
+          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS, nowPlaying.overlay), channels, DEFAULT_LIVE_OPTIONS);
           const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
           return { channel, broadcaster, engine, live, low };
         }),

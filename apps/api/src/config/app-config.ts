@@ -51,6 +51,8 @@ export const envSchema = z.object({
   /** Local audio cache (every downloaded track is kept here; Telegram is hit once per track). 0 MB disables it. */
   AUDIO_CACHE_DIR: z.string().optional(),
   AUDIO_CACHE_MAX_MB: z.coerce.number().int().min(0).default(1024),
+  /** Bytes per Telegram download request (KiB): a download is one request after another, so bigger = faster. */
+  TELEGRAM_DOWNLOAD_REQUEST_KB: z.coerce.number().int().refine((n) => [64, 128, 256, 512, 1024].includes(n), 'must be 64, 128, 256, 512 or 1024').default(512),
   AUDIO_CACHE_CONCURRENT_FILLS: z.coerce.number().int().min(1).max(8).default(2),
   /** Enables GET /metrics (Prometheus text) for `Authorization: Bearer <token>`. Unset = endpoint disabled. */
   METRICS_TOKEN: z.string().min(16).optional(),
