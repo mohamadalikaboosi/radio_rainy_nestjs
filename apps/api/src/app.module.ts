@@ -226,7 +226,19 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
           engine.subscribe((e) => {
             if (e.type === 'track-started') {
               void t.findById(e.trackId).then((tr) => tr && nowPlaying.set(tr.title, tr.artist ?? null)).catch(() => undefined);
-            } else if (e.type === 'ad-started') nowPlaying.set(channel.title, null);
+            } else if (e.type === 'ad-started') {
+              // the ad on air: "AD" + its name, and where to go (the link's host, or the button text)
+              void adsRepo.onAir(e.adId).then((ad) => {
+                if (!ad) return nowPlaying.set('AD', null);
+                let where = ad.ctaLabel ?? '';
+                try {
+                  if (ad.linkUrl) where = new URL(ad.linkUrl).host;
+                } catch {
+                  /* keep the button text */
+                }
+                nowPlaying.set(`AD · ${ad.name}`, where || null);
+              }).catch(() => nowPlaying.set('AD', null));
+            }
           });
           const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS, nowPlaying.overlay), channels, DEFAULT_LIVE_OPTIONS);
           const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
