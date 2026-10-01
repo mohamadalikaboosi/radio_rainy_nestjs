@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Broadcaster } from '../domain/broadcaster';
-import { DEFAULT_LOW, LowQualityStream, lowQualityArgs } from './low-quality-stream';
+import { DEFAULT_LOW, lowQualityArgs, FfmpegLowQualityStream } from './low-quality-stream';
 
 const dir = mkdtempSync(join(tmpdir(), 'lowq-'));
 const script = (name: string, body: string): string => {
@@ -40,7 +40,7 @@ describe('LowQualityStream', () => {
 
   it('runs ffmpeg only while someone listens and feeds listeners from the main stream', async () => {
     const main = new Broadcaster(10);
-    const low = new LowQualityStream(main, { ...opts, ffmpegPath: echo });
+    const low = new FfmpegLowQualityStream(main, { ...opts, ffmpegPath: echo });
     expect(low.running).toBe(false);
     expect(main.listenerCount).toBe(0);
     const a = sink();
@@ -66,7 +66,7 @@ describe('LowQualityStream', () => {
     const main = new Broadcaster(10);
     const { spawn } = await import('node:child_process');
     let n = 0;
-    const low = new LowQualityStream(main, { ...opts, ffmpegPath: echo }, (c, a) => {
+    const low = new FfmpegLowQualityStream(main, { ...opts, ffmpegPath: echo }, (c, a) => {
       spawned.push(c);
       n++;
       return spawn(n === 1 ? crashy : c, a, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -82,7 +82,7 @@ describe('LowQualityStream', () => {
   it('becomes unavailable (and ends low listeners) when ffmpeg cannot be started, then recovers', async () => {
     let t = 1_000;
     const main = new Broadcaster(10);
-    const low = new LowQualityStream(main, { ...opts, ffmpegPath: '/nonexistent/ffmpeg', brokenForMs: 1000 }, undefined, () => t);
+    const low = new FfmpegLowQualityStream(main, { ...opts, ffmpegPath: '/nonexistent/ffmpeg', brokenForMs: 1000 }, undefined, () => t);
     const s = sink();
     low.subscribe(s.sink);
     await wait(() => !low.available);
@@ -93,7 +93,7 @@ describe('LowQualityStream', () => {
 
   it('shutdown ends listeners and stops ffmpeg', async () => {
     const main = new Broadcaster(10);
-    const low = new LowQualityStream(main, { ...opts, ffmpegPath: echo });
+    const low = new FfmpegLowQualityStream(main, { ...opts, ffmpegPath: echo });
     const s = sink();
     low.subscribe(s.sink);
     low.shutdown();

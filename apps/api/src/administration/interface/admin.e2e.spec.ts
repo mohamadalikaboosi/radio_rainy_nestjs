@@ -8,7 +8,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import S3rver from 's3rver';
-import { LexiconRepository } from '../../lyrics/application/lexicon';
+import { LexiconRepository } from '../../lyrics/application/ports/lexicon.repository';
 
 const CH = '1001';
 
@@ -250,7 +250,6 @@ describe('Super Admin API (e2e)', () => {
       await http().post('/admin/sync').set(auth()).send({}).expect(202);
     });
   });
-
 
   describe('channels (multi-channel stations)', () => {
     let second = '';

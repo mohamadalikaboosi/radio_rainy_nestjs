@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -114,7 +113,6 @@ export function redactConfig(cfg: AppConfig): Record<string, unknown> {
   for (const k of SECRET_KEYS) if (out[k] !== undefined) out[k] = '[REDACTED]';
   return out;
 }
-
 
 /** Non-secret diagnostics for the most common .env mistakes (never prints the value itself, only its shape). */
 function hint(key: string, value: string | undefined): string {

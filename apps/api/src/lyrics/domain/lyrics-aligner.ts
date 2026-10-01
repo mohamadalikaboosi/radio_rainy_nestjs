@@ -1,6 +1,6 @@
 import { parseLyricLines, tokenize } from './normalize';
 import { similarity } from './similarity';
-import { EMPTY_LEXICON, LearnedPair, Lexicon } from '../application/lexicon';
+import { EMPTY_LEXICON, LearnedPair, Lexicon } from './lexicon';
 import { Transcript, TranscriptWord } from './transcription.types';
 
 export const ALIGNMENT_ALGORITHM_VERSION = 'dp-word-v2-lexicon';

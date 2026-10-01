@@ -1,14 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { LyricsRepository } from './ports/lyrics.repository';
-import { TelegramGateway } from '../../catalog/application/ports/telegram.types';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
-import { AudioPreprocessor } from '../infrastructure/audio-preprocessor';
+import { AudioStaging } from './ports/audio-staging';
 import { whisperLanguage } from '../domain/language-detect';
 import { TranscriptionSource } from './ports/transcription-source';
 
@@ -32,11 +26,9 @@ export class TrackTranscriptionService {
 
   constructor(
     private readonly source: TranscriptionSource,
-    private readonly gateway: TelegramGateway,
-    private readonly preprocessor: AudioPreprocessor,
+    private readonly staging: AudioStaging,
     private readonly tracks: TrackRepository,
     private readonly lyrics: LyricsRepository,
-    private readonly tmpDir: string,
   ) {}
 
   async isEnabled(): Promise<boolean> {
@@ -59,23 +51,17 @@ export class TrackTranscriptionService {
       }
     }
 
-    const work = join(this.tmpDir, `${trackId}-${randomUUID()}`);
-    await mkdir(work, { recursive: true });
-    const raw = join(work, 'source');
-    const prepared = join(work, 'prepared.flac');
     const started = Date.now();
+    const staged = await this.staging.stage({ trackId, channelId: ident.channelId, messageId: ident.messageId, sampleRate: runtime.sampleRate }, opts.signal);
     try {
-      // Streamed to disk: no whole-file buffering in RAM.
-      await pipeline(Readable.from(this.gateway.download(ident.channelId, ident.messageId, { signal: opts.signal })), createWriteStream(raw));
-      await this.preprocessor.toWhisperInput(raw, prepared, { sampleRate: runtime.sampleRate }, opts.signal);
       // Per-track language (detected from the lyrics: Persian/English) beats the global hint; mixed/unknown = auto-detect.
       const language = whisperLanguage(await this.tracks.getLyricsLanguage(trackId)) ?? (runtime.language || undefined);
-      const transcript = await runtime.provider.transcribe({ trackId, filePath: prepared, language }, opts.signal);
+      const transcript = await runtime.provider.transcribe({ trackId, filePath: staged.filePath, language }, opts.signal);
       const id = await this.lyrics.saveTranscript(trackId, hash, transcript);
       this.logger.log({ msg: 'track transcribed', trackId, language, sampleRate: runtime.sampleRate, segments: transcript.segments.length, ms: Date.now() - started });
       return { kind: 'DONE', transcriptId: id, cached: false };
     } finally {
-      await rm(work, { recursive: true, force: true }).catch((e: unknown) => this.logger.warn({ msg: 'tmp cleanup failed', err: String(e) }));
+      await staged.dispose().catch((e: unknown) => this.logger.warn({ msg: 'tmp cleanup failed', err: String(e) }));
     }
   }
 }

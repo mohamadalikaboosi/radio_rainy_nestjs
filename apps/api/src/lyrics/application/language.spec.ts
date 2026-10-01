@@ -1,13 +1,16 @@
 import { freshDb } from '../../../test/test-db';
 import { LyricsAlignmentService } from './lyrics-alignment.service';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
+import { PgLanguageData } from '../infrastructure/language-data.repository';
 import { LyricsRepository } from './ports/lyrics.repository';
 import { PgLyricsRepository } from '../infrastructure/lyrics.repository';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { LanguageService, parseReview } from './language.service';
-import { LexiconRepository } from './lexicon';
-import { LlmNotConfiguredError, OpenAiCompatibleLlm } from '../infrastructure/llm-client';
+import { LexiconRepository } from './ports/lexicon.repository';
+import { PgLexiconRepository } from '../infrastructure/lexicon.repository';
+import { LlmNotConfiguredError } from './ports/llm-client';
+import { OpenAiCompatibleLlm } from '../infrastructure/llm-client';
 
 describe('parseReview', () => {
   it('extracts the JSON array even when the LLM adds prose or code fences', () => {
@@ -49,7 +52,7 @@ describe('language learning end to end (real DB)', () => {
     db = await freshDb();
     lyrics = new PgLyricsRepository(db);
     tracks = new PgTrackRepository(db);
-    lexicon = new LexiconRepository(db);
+    lexicon = new PgLexiconRepository(db);
     align = new LyricsAlignmentService(lyrics, lexicon, tracks);
   });
   afterEach(() => db.onModuleDestroy());
@@ -106,7 +109,7 @@ describe('language learning end to end (real DB)', () => {
     await align.alignTrack(a.trackId, a.transcriptId, { learn: false });
     await lexicon.learn('en', [{ asr: 'cuz', lyric: 'because' }]);
     await lexicon.setStatus('en', 'cuz', 'because', 'APPROVED');
-    const svc = new LanguageService(db, lexicon, align, { chat: async () => '[]' });
+    const svc = new LanguageService(new PgLanguageData(db), lexicon, align, { chat: async () => '[]' });
     const r = await svc.retrain(50, 0);
     expect(r).toMatchObject({ processed: 1, improved: 1, total: 1 });
     expect((await lyrics.getLatestSynced(a.trackId))?.version).toBe(2);

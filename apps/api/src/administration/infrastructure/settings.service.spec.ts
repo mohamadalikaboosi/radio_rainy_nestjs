@@ -2,7 +2,7 @@ import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { SettingsService } from '../application/ports/settings.service';
-import { PgSettingsService } from '../infrastructure/settings.service';
+import { PgSettingsService } from './settings.service';
 
 const KEY = 'ab'.repeat(32);
 

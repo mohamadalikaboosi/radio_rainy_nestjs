@@ -2,7 +2,8 @@ import { BadRequestException } from '@nestjs/common';
 import { parseLiveTarget } from '../../catalog/application/channel.service';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { ManualOrAutoLiveApi } from './manual-live-api';
-import { buildFfmpegRtmpArgs, TelegramLiveApi } from '../application/telegram-live-streamer';
+import { TelegramLiveApi } from '../application/ports/telegram-live';
+import { buildFfmpegRtmpArgs } from './ffmpeg-rtmp-publisher';
 
 describe('parseLiveTarget', () => {
   it('accepts a separate URL and key', () => {

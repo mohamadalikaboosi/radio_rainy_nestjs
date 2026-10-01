@@ -6,7 +6,6 @@ import { TelegramTrackDiscovery } from '../../catalog/application/track-discover
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { AdSource, PlayableAd } from './playback-engine';
 
-
 const AD_BYTE = 200;
 const AD_ID = '11111111-1111-4111-8111-111111111111';
 

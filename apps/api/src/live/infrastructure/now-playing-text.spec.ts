@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drawtextFilter, filterEscape, NowPlayingText } from './now-playing-text';
-import { buildFfmpegRtmpArgs } from '../application/telegram-live-streamer';
+import { buildFfmpegRtmpArgs } from './ffmpeg-rtmp-publisher';
 
 describe('now playing on the Telegram live video', () => {
   const dir = () => mkdtempSync(join(tmpdir(), 'np-'));

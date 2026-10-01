@@ -2,8 +2,6 @@ import { MessagesRepository, LiveMessage, MessageInput } from '../application/po
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 
-
-
 interface Row {
   id: string;
   channel_id: string;

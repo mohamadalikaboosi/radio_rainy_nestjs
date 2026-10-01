@@ -145,7 +145,7 @@ describe('alignLyrics', () => {
 });
 
 import { detectLanguage, whisperLanguage } from './language-detect';
-import { lexiconFrom } from '../application/lexicon';
+import { lexiconFrom } from './lexicon';
 
 describe('language detection', () => {
   it('detects Persian, English, mixed and unknown', () => {

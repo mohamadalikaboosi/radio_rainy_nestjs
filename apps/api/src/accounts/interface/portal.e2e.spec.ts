@@ -91,7 +91,6 @@ describe('accounts, advertiser portal, station owners and the billing switch (e2
       svc.resetThrottle();
     });
 
-
     it('signs up, logs in, and protects everything', async () => {
       const s = await signup('Coffee Co', 'owner@coffee.example');
       expect(s.token).toBeTruthy();

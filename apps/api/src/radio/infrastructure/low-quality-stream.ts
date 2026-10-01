@@ -1,20 +1,7 @@
+import { LowQualityStream } from '../application/ports/low-quality-stream';
 import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
 import { Broadcaster, ListenerSink } from '../domain/broadcaster';
-
-export interface LowQualityOptions {
-  ffmpegPath: string;
-  /** Bitrate of the data-saver stream (mono). */
-  bitrateKbps: number;
-  /** Seconds of audio kept for an instant start of a new low-quality listener. */
-  prebufferSeconds: number;
-  /** If ffmpeg's input queue grows beyond this it is restarted instead of letting memory grow. */
-  maxBacklogBytes: number;
-  restartMinMs: number;
-  restartMaxMs: number;
-  /** After ffmpeg could not be started at all, listeners are served the normal stream for this long. */
-  brokenForMs: number;
-}
 
 export const DEFAULT_LOW: LowQualityOptions = { ffmpegPath: 'ffmpeg', bitrateKbps: 48, prebufferSeconds: 2, maxBacklogBytes: 512 * 1024, restartMinMs: 500, restartMaxMs: 10_000, brokenForMs: 60_000 };
 
@@ -38,8 +25,8 @@ type Spawn = (cmd: string, args: string[]) => ChildProcess;
  * listener. It only runs while somebody listens: the first low listener starts it, the last one stops it. If ffmpeg is missing or keeps
  * failing, `available` turns false for a while and the controller serves the normal stream instead, so nobody is left without audio.
  */
-export class LowQualityStream {
-  private readonly logger = new Logger(LowQualityStream.name);
+export class FfmpegLowQualityStream implements LowQualityStream {
+  private readonly logger = new Logger(FfmpegLowQualityStream.name);
   readonly broadcaster: Broadcaster;
   private proc: ChildProcess | null = null;
   private unsubscribeMain: (() => void) | null = null;
@@ -171,4 +158,18 @@ export class LowQualityStream {
     this.logger.error({ msg: 'low-quality encoder unavailable; serving the normal stream instead', err: err instanceof Error ? err.message : String(err) });
     this.broadcaster.endAll();
   }
+}
+
+export interface LowQualityOptions {
+  ffmpegPath: string;
+  /** Bitrate of the data-saver stream (mono). */
+  bitrateKbps: number;
+  /** Seconds of audio kept for an instant start of a new low-quality listener. */
+  prebufferSeconds: number;
+  /** If ffmpeg's input queue grows beyond this it is restarted instead of letting memory grow. */
+  maxBacklogBytes: number;
+  restartMinMs: number;
+  restartMaxMs: number;
+  /** After ffmpeg could not be started at all, listeners are served the normal stream for this long. */
+  brokenForMs: number;
 }

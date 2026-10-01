@@ -2,7 +2,7 @@ import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { Broadcaster } from '../domain/broadcaster';
 import { ListenerSampler } from './listener-sampler';
-import { Station } from './station-manager';
+import { Station } from '../application/station-manager';
 
 describe('ListenerSampler', () => {
   let db: DatabaseService;

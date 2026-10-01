@@ -1,7 +1,5 @@
 import { commandSchema, RadioCommand, RadioBus } from '../application/ports/radio-bus';
-
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-
 import IORedis from 'ioredis';
 const CHANNEL = 'radio_rainy:commands';
 

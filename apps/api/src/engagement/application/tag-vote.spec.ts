@@ -11,10 +11,6 @@ import { PgEngagementSettingsRepository } from '../infrastructure/engagement-set
 import { PgTagPollRepository } from '../infrastructure/tag-poll.repository';
 import { pickWinner, TagVoteService } from './tag-vote.service';
 
-
-
-
-
 const MIN = 60_000;
 
 describe('pickWinner', () => {

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AuditService } from '../../administration/application/ports/audit.service';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
-import { DatabaseService } from '../../shared/infrastructure/database/database.service';
+import { PlaybackHistoryRepository } from '../../radio/application/ports/playback-history.repository';
 import { AdSummary, AdsRepository } from '../../engagement/application/ports/ads.repository';
 import { EngagementSettings, EngagementSettingsRepository } from '../../engagement/application/ports/engagement-settings.repository';
 import { engagementSchema } from '../../engagement/application/ports/engagement-settings.repository';
@@ -80,7 +80,7 @@ export class PortalController {
     private readonly polls: TagPollRepository,
     private readonly votes: TagVoteService,
     private readonly stations: StationManager,
-    private readonly db: DatabaseService,
+    private readonly history: PlaybackHistoryRepository,
     @Inject(PORTAL_AUDIT) private readonly audit: AuditService,
     private readonly messages: MessagesRepository,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
@@ -234,14 +234,8 @@ export class PortalController {
     const owned = await this.channels.ownedBy(req.portal.accountId);
     return Promise.all(
       owned.map(async (c) => {
-        const s = await this.db.query<{ plays: string; peak: number | null; avg: string | null }>(
-          `SELECT (SELECT count(*) FROM playback_history h JOIN tracks t ON t.id = h.track_id WHERE t.telegram_channel_id = $1 AND h.started_at > now() - interval '24 hours') AS plays,
-                  (SELECT max(listeners) FROM listener_samples WHERE channel_id = $1 AND at > now() - interval '24 hours') AS peak,
-                  (SELECT avg(listeners) FROM listener_samples WHERE channel_id = $1 AND at > now() - interval '24 hours') AS avg`,
-          [c.id],
-        );
-        const row = s.rows[0];
-        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: Number(row?.plays ?? 0), peakListeners24h: row?.peak ?? 0, avgListeners24h: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
+        const a = await this.history.stationActivity(c.id);
+        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: a.plays, peakListeners24h: a.peakListeners, avgListeners24h: a.avgListeners };
       }),
     );
   }

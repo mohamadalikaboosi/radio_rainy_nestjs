@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Inject, Delete, Get, HttpCode, P
 import type { Response } from 'express';
 import { z } from 'zod';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
-import { LexiconRepository } from '../../lyrics/application/lexicon';
+import { LexiconRepository } from '../../lyrics/application/ports/lexicon.repository';
 import { LanguageService } from '../../lyrics/application/language.service';
 import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
 import { LlmSettingsInput, SettingsService, StorageSettingsInput, TelegramSettingsInput, WhisperSettingsInput } from '../application/ports/settings.service';

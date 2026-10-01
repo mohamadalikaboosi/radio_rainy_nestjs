@@ -8,4 +8,6 @@ export abstract class PlaybackHistoryRepository {
   /** Closes rows left open by a crashed process. */
   abstract closeDangling(): Promise<number>;
   abstract list(channelId: string, limit: number): Promise<{ id: string; trackId: string; title: string; artist: string | null; startedAt: Date; endedAt: Date | null; endReason: string | null }[]>;
+  /** Plays and listener numbers of one station over the last day (owner dashboard). */
+  abstract stationActivity(channelId: string): Promise<{ plays: number; peakListeners: number; avgListeners: number }>;
 }

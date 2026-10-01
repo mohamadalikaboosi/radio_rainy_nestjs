@@ -1,3 +1,4 @@
+import { JwtTokenService } from './shared/infrastructure/jwt-token.service';
 import { Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { APP_CONFIG, AppConfig } from './shared/infrastructure/config/app-config';
 import { DatabaseService } from './shared/infrastructure/database/database.service';
@@ -68,7 +69,7 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
   controllers: [AdminMessagesController, AdminPlatformController, AdminAccountsController, AdminCampaignsController, AdminStationOwnerController, AdminAdsController, AdminSponsorsController, AdminEngagementController, AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
     { provide: AdminUsersRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAdminUsersRepository(db) },
-    { provide: AdminAuthService, inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminAuthService(u, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
+    { provide: AdminAuthService, inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminAuthService(u, { tokens: new JwtTokenService(c.JWT_SECRET), tokenTtlSeconds: 8 * 3600 }) },
     { provide: 'ADMIN_SEEDER', inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminSeederLifecycle(u, c) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
     { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAuditService(db) },

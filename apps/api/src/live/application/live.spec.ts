@@ -1,6 +1,8 @@
 import { Writable } from 'node:stream';
 import { Broadcaster } from '../../radio/domain/broadcaster';
-import { buildFfmpegRtmpArgs, RtmpPublisher, RtmpTarget, TelegramLiveApi, TelegramLiveStreamer } from './telegram-live-streamer';
+import { RtmpPublisher, RtmpTarget, TelegramLiveApi } from './ports/telegram-live';
+import { buildFfmpegRtmpArgs } from '../infrastructure/ffmpeg-rtmp-publisher';
+import { TelegramLiveStreamer } from './telegram-live-streamer';
 
 describe('buildFfmpegRtmpArgs', () => {
   it('publishes mp3 from stdin + a still video to url+key, AAC at 48 kHz', () => {

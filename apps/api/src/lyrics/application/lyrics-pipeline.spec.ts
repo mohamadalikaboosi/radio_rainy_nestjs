@@ -5,7 +5,7 @@ import { audioMsg, FakeTelegramGateway } from '../../../test/fake-telegram';
 import { InlineQueue } from '../../../test/inline-queue';
 import { freshDb } from '../../../test/test-db';
 import { LyricsAlignmentService } from './lyrics-alignment.service';
-import { LexiconRepository } from './lexicon';
+import { PgLexiconRepository } from '../infrastructure/lexicon.repository';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsError } from '../domain/lyrics.errors';
 import { LyricsRepository } from './ports/lyrics.repository';
@@ -16,6 +16,7 @@ import { TelegramTrackDiscovery } from '../../catalog/application/track-discover
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { AudioPreprocessor } from '../infrastructure/audio-preprocessor';
+import { TelegramAudioStaging } from '../infrastructure/telegram-audio-staging';
 import { TrackTranscriptionService } from './track-transcription.service';
 import { TranscriptionError } from '../domain/transcription.errors';
 import { AudioInput, Transcript, TranscriptionProvider } from '../domain/transcription.types';
@@ -85,13 +86,11 @@ describe('lyrics pipeline', () => {
     queue = new InlineQueue(3);
     const transcription = new TrackTranscriptionService(
       { current: async () => (withWhisper ? { provider: whisper, identity: { provider: 'fake', model: 'fake-1' }, language: undefined, sampleRate: 48000 } : null) },
-      gw,
-      copyPre,
+      new TelegramAudioStaging(gw, copyPre, mkdtempSync(join(tmpdir(), 'rr-'))),
       tracks,
       lyricsRepo,
-      mkdtempSync(join(tmpdir(), 'rr-')),
     );
-    pipeline = new LyricsPipeline(queue, new LyricsService(src, lyricsRepo, tracks, 3600), transcription, new LyricsAlignmentService(lyricsRepo, new LexiconRepository(db), tracks), tracks);
+    pipeline = new LyricsPipeline(queue, new LyricsService(src, lyricsRepo, tracks, 3600), transcription, new LyricsAlignmentService(lyricsRepo, new PgLexiconRepository(db), tracks), tracks);
     queue.pipeline = pipeline;
     discovery = new TelegramTrackDiscovery(gw, tracks, { onLyricsNeedFetch: (id) => pipeline.start(id) });
     gw.add(audioMsg(1, 'Artist - Song\nLyrics: https://telegra.ph/song-1\n#rain'), [Buffer.from('AUDIO-1')]);

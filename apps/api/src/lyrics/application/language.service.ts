@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { LyricsAlignmentService } from './lyrics-alignment.service';
-import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { LlmClient, LlmNotConfiguredError } from '../infrastructure/llm-client';
-import { LexiconRepository } from './lexicon';
+import { LanguageData } from './ports/language-data';
+import { LlmClient, LlmNotConfiguredError } from './ports/llm-client';
+import { LexiconRepository } from './ports/lexicon.repository';
 
 export interface ReviewResult {
   reviewed: number;
@@ -36,15 +36,15 @@ export class LanguageService {
   private readonly logger = new Logger(LanguageService.name);
 
   constructor(
-    private readonly db: DatabaseService,
+    private readonly data: LanguageData,
     private readonly lexicon: LexiconRepository,
     private readonly alignment: Pick<LyricsAlignmentService, 'alignTrack'>,
     private readonly llm: LlmClient,
   ) {}
 
   async stats(): Promise<unknown> {
-    const tracks = await this.db.query<{ lang: string | null; n: string }>(`SELECT lyrics_language AS lang, count(*) AS n FROM tracks GROUP BY 1 ORDER BY 1`);
-    return { lexicon: await this.lexicon.stats(), tracksByLanguage: tracks.rows.map((r) => ({ language: r.lang ?? 'undetected', tracks: Number(r.n) })) };
+    const tracks = await this.data.tracksByLanguage();
+    return { lexicon: await this.lexicon.stats(), tracksByLanguage: tracks.map((r) => ({ language: r.language ?? 'undetected', tracks: r.tracks })) };
   }
 
   /** Asks the configured LLM which learned (asr → lyric) pairs are real spelling variants; approves/rejects accordingly. */
@@ -80,41 +80,28 @@ export class LanguageService {
 
   /** Re-aligns already transcribed songs with the current lexicon (no Whisper involved) and learns from improved results. */
   async retrain(limit: number, offset: number): Promise<{ processed: number; improved: number; learned: number; total: number }> {
-    const total = Number((await this.db.query<{ n: string }>('SELECT count(DISTINCT track_id) AS n FROM transcripts')).rows[0]?.n ?? 0);
-    const rows = await this.db.query<{ track_id: string; id: string; version: number | null }>(
-      `SELECT t.track_id, t.id, (SELECT max(version) FROM synced_lyrics s WHERE s.track_id = t.track_id) AS version
-         FROM (SELECT DISTINCT ON (track_id) track_id, id FROM transcripts ORDER BY track_id, created_at DESC) t
-         JOIN lyrics l ON l.track_id = t.track_id AND l.raw_text IS NOT NULL
-        ORDER BY t.track_id LIMIT $1 OFFSET $2`,
-      [limit, offset],
-    );
+    const total = await this.data.transcribedTrackCount();
+    const rows = await this.data.retrainCandidates(limit, offset);
     let improved = 0;
     let learned = 0;
-    for (const r of rows.rows) {
-      const out = await this.alignment.alignTrack(r.track_id, r.id);
+    for (const r of rows) {
+      const out = await this.alignment.alignTrack(r.trackId, r.transcriptId);
       if (out.kind === 'ALIGNED') {
         learned += out.learned;
         if (r.version !== null && out.synced.version > r.version) improved++;
       }
     }
-    return { processed: rows.rows.length, improved, learned, total };
+    return { processed: rows.length, improved, learned, total };
   }
 
   /** JSONL training set (lyrics + ASR transcript + timed lines) for fine-tuning a Persian/English speech model elsewhere. */
   async *exportJsonl(): AsyncGenerator<string> {
     let last = '00000000-0000-0000-0000-000000000000';
     for (;;) {
-      const r = await this.db.query<{ id: string; lang: string | null; raw: string; segments: unknown; lines: unknown }>(
-        `SELECT t.id, t.lyrics_language AS lang, l.raw_text AS raw,
-                (SELECT segments FROM transcripts tr WHERE tr.track_id = t.id ORDER BY created_at DESC LIMIT 1) AS segments,
-                (SELECT lines FROM synced_lyrics s WHERE s.track_id = t.id ORDER BY version DESC LIMIT 1) AS lines
-           FROM tracks t JOIN lyrics l ON l.track_id = t.id AND l.raw_text IS NOT NULL
-          WHERE t.id > $1 AND EXISTS (SELECT 1 FROM synced_lyrics s WHERE s.track_id = t.id) ORDER BY t.id LIMIT 100`,
-        [last],
-      );
-      if (r.rows.length === 0) return;
-      for (const row of r.rows) yield `${JSON.stringify({ trackId: row.id, language: row.lang, lyrics: row.raw, asrSegments: row.segments, alignedLines: row.lines })}\n`;
-      last = r.rows[r.rows.length - 1]?.id ?? last;
+      const rows = await this.data.trainingBatch(last, 100);
+      if (rows.length === 0) return;
+      for (const row of rows) yield `${JSON.stringify({ trackId: row.id, language: row.lang, lyrics: row.raw, asrSegments: row.segments, alignedLines: row.lines })}\n`;
+      last = rows[rows.length - 1]?.id ?? last;
     }
   }
 }

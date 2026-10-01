@@ -1,7 +1,7 @@
-import { listenersOf } from './station-manager';
+import { listenersOf } from '../application/station-manager';
 import { Logger } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { StationManager } from './station-manager';
+import { StationManager } from '../application/station-manager';
 
 export const SAMPLE_EVERY_SECONDS = 30;
 const RETENTION_DAYS = 90;

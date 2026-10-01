@@ -12,7 +12,6 @@ import { resolverFrom } from './caching-gateway';
 import { DiskAudioCache } from './disk-audio-cache';
 import { DiskCachingGateway } from './disk-caching-gateway';
 
-
 const audio = (fill: number): Buffer => Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x00]), Buffer.alloc(19996, fill)]);
 
 describe('engine + DiskCachingGateway (Telegram is hit once per track)', () => {

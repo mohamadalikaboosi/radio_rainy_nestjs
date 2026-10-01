@@ -1,3 +1,4 @@
+import { JwtTokenService } from '../../shared/infrastructure/jwt-token.service';
 import { BadRequestException, HttpException, UnauthorizedException } from '@nestjs/common';
 import { sign } from 'jsonwebtoken';
 import { AdminUser, AdminUserStore } from './ports/admin-users.repository';
@@ -101,7 +102,7 @@ describe('AdminAuthService', () => {
   beforeEach(async () => {
     users = new MemoryUsers();
     await users.create('Admin@Example.com', await hashPassword('pw-123-long'), false);
-    svc = new AdminAuthService(users, { jwtSecret: secret, tokenTtlSeconds: 3600 }, () => t);
+    svc = new AdminAuthService(users, { tokens: new JwtTokenService(secret), tokenTtlSeconds: 3600 }, () => t);
   });
 
   it('logs in (case-insensitive username) and issues a verifiable SUPER_ADMIN token', async () => {
@@ -140,7 +141,7 @@ describe('AdminAuthService', () => {
   it('a seeded default admin logs in flagged mustChangePassword, and changing the password clears the flag', async () => {
     const fresh = new MemoryUsers();
     await seedAdmin(fresh, {}, quiet);
-    const s = new AdminAuthService(fresh, { jwtSecret: secret, tokenTtlSeconds: 3600 }, () => t);
+    const s = new AdminAuthService(fresh, { tokens: new JwtTokenService(secret), tokenTtlSeconds: 3600 }, () => t);
     const r = await s.login('admin', 'admin', 'ip6');
     expect(r.mustChangePassword).toBe(true);
     await expect(s.changePassword(s.verifyToken(r.token), 'admin', 'admin', 'ip6')).rejects.toBeInstanceOf(BadRequestException);

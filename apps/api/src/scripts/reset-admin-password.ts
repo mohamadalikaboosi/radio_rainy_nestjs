@@ -2,7 +2,6 @@ import { PgAdminUsersRepository } from '../administration/infrastructure/admin-u
 import { resetAdminPassword } from '../administration/application/admin-seeder';
 import { DatabaseService } from '../shared/infrastructure/database/database.service';
 
-
 /**
  * Forgot the Super Admin password?
  *   pnpm --filter @radio_rainy/api reset-admin-password [username] [newPassword]

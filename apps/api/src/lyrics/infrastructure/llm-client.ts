@@ -1,20 +1,5 @@
+import { LlmMessage, LlmNotConfiguredError, LlmClient } from '../application/ports/llm-client';
 import { SettingsService } from '../../administration/application/ports/settings.service';
-
-export interface LlmMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-export class LlmNotConfiguredError extends Error {
-  constructor() {
-    super('LLM is not configured or disabled (Settings → Language model)');
-    this.name = 'LlmNotConfiguredError';
-  }
-}
-
-export interface LlmClient {
-  chat(messages: LlmMessage[], signal?: AbortSignal): Promise<string>;
-}
 
 type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 

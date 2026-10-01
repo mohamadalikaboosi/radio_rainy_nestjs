@@ -5,7 +5,6 @@ import { DatabaseService } from '../../shared/infrastructure/database/database.s
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 
-
 /** Each track = 1 second of "audio" (20000 B at 20000 B/s) filled with its message id, so bytes identify the track. */
 const addTrack = (gw: FakeTelegramGateway, id: number, caption = `Artist - Song ${id}`): void =>
   gw.add(audioMsg(id, caption, { size: 20000, duration: 1 }), [Buffer.alloc(20000, id)]);

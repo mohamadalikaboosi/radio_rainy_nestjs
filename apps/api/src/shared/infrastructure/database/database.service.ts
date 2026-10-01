@@ -1,3 +1,4 @@
+import { TransactionRunner } from '../../kernel/transaction';
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { APP_CONFIG, AppConfig } from '../config/app-config';
@@ -11,7 +12,7 @@ export interface Queryable {
 export const LOCKS = { MIGRATE: 7_100_001, PLAYBACK_LEADER: 7_100_002 } as const;
 
 @Injectable()
-export class DatabaseService implements Queryable, OnModuleInit, OnModuleDestroy {
+export class DatabaseService implements Queryable, TransactionRunner, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
   readonly pool: Pool;
 

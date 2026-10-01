@@ -1,5 +1,5 @@
 import { ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
-import { sign, verify } from 'jsonwebtoken';
+import { TokenService } from '../../shared/kernel/token-service';
 import { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 import { AccountsRepository } from './ports/accounts.repository';
@@ -35,7 +35,7 @@ export class PortalAuthService {
   constructor(
     private readonly accounts: AccountsRepository,
     private readonly platform: Pick<PlatformSettingsRepository, 'get'>,
-    private readonly cfg: { jwtSecret: string; tokenTtlSeconds: number },
+    private readonly cfg: { tokens: TokenService; tokenTtlSeconds: number },
     private readonly now: () => number = () => Date.now(),
   ) {}
 
@@ -67,8 +67,8 @@ export class PortalAuthService {
 
   verifyToken(token: string): PortalIdentity {
     try {
-      const p = verify(token, this.cfg.jwtSecret, { algorithms: ['HS256'], audience: 'portal' });
-      if (typeof p === 'string' || p.role !== 'ACCOUNT' || typeof p.aid !== 'string' || typeof p.uid !== 'string' || typeof p.sub !== 'string') throw new Error('bad claims');
+      const p = this.cfg.tokens.verify(token, { audience: 'portal' });
+      if (p.role !== 'ACCOUNT' || typeof p.aid !== 'string' || typeof p.uid !== 'string' || typeof p.sub !== 'string') throw new Error('bad claims');
       return { accountId: p.aid, userId: p.uid, email: p.sub };
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
@@ -76,7 +76,7 @@ export class PortalAuthService {
   }
 
   private issue(i: PortalIdentity): string {
-    return sign({ role: 'ACCOUNT', aid: i.accountId, uid: i.userId }, this.cfg.jwtSecret, { algorithm: 'HS256', subject: i.email, audience: 'portal', expiresIn: this.cfg.tokenTtlSeconds });
+    return this.cfg.tokens.sign({ role: 'ACCOUNT', aid: i.accountId, uid: i.userId }, { subject: i.email, audience: 'portal', expiresInSeconds: this.cfg.tokenTtlSeconds });
   }
 
   /** Forgets all rate-limit counters (tests, or an operator unblocking a shared office IP). */

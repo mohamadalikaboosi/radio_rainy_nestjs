@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-
 /**
  * Reversible encryption for secrets that must be usable later (a Telegram session string cannot be hashed,
  * the client needs the original). AES-256-GCM: confidentiality + tamper detection, fresh random IV per write.

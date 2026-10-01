@@ -1,36 +1,8 @@
+import { LexiconRepository } from '../application/ports/lexicon.repository';
+import { LexiconStatus, Lexicon, lexiconFrom, LearnedPair, LexiconRow, MIN_OBSERVATIONS } from '../domain/lexicon';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsLanguage } from '../domain/language-detect';
-
-export type LexiconStatus = 'LEARNED' | 'APPROVED' | 'REJECTED';
-
-/** ASR word -> lyric spellings known to mean the same word. Used by the aligner as "counts as a match". */
-export interface Lexicon {
-  equivalent(asrWord: string, lyricWord: string): boolean;
-}
-
-export const EMPTY_LEXICON: Lexicon = { equivalent: () => false };
-
-export function lexiconFrom(map: ReadonlyMap<string, ReadonlySet<string>>): Lexicon {
-  return { equivalent: (a, l) => map.get(a)?.has(l) === true };
-}
-
-export interface LearnedPair {
-  asr: string;
-  lyric: string;
-}
-
-export interface LexiconRow {
-  lang: string;
-  asrWord: string;
-  lyricWord: string;
-  count: number;
-  status: LexiconStatus;
-  updatedAt: Date;
-}
-
-/** A learned pair is trusted after it was observed this many times (or when an admin/LLM approved it). */
-export const MIN_OBSERVATIONS = 2;
 const CACHE_MS = 30_000;
 
 /**
@@ -38,7 +10,7 @@ const CACHE_MS = 30_000;
  * what Whisper wrote vs what the official lyrics say. Trusted entries make future alignments more accurate.
  */
 @Injectable()
-export class LexiconRepository {
+export class PgLexiconRepository implements LexiconRepository {
   private readonly cache = new Map<string, { at: number; lex: Lexicon }>();
 
   constructor(private readonly db: DatabaseService) {}

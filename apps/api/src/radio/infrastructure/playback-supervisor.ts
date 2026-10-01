@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { DatabaseService, LOCKS } from '../../shared/infrastructure/database/database.service';
-import { RadioBus, RadioCommand } from './ports/radio-bus';
-import { PlaybackHistoryRepository } from './ports/playback-history.repository';
-import { StationManager } from './station-manager';
+import { RadioBus, RadioCommand } from '../application/ports/radio-bus';
+import { PlaybackHistoryRepository } from '../application/ports/playback-history.repository';
+import { StationManager } from '../application/station-manager';
 
 /**
  * Leader election: only the instance holding the Postgres advisory lock runs the stations, so two workers can never

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { Api, TelegramClient } from 'telegram';
 import { GramJsTelegramGateway } from '../../catalog/infrastructure/telegram/gramjs.gateway';
 import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
-import { RtmpTarget, TelegramLiveApi } from '../application/telegram-live-streamer';
+import { RtmpTarget, TelegramLiveApi } from '../application/ports/telegram-live';
 
 /** Telegram error codes of the live-stream methods, with what to do about them. */
 const HINTS: Record<string, string> = {

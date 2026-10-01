@@ -43,4 +43,15 @@ export class PgPlaybackHistoryRepository implements PlaybackHistoryRepository {
     );
     return r.rows.map((x) => ({ id: x.id, trackId: x.track_id, title: x.title, artist: x.artist, startedAt: x.started_at, endedAt: x.ended_at, endReason: x.end_reason }));
   }
+
+  async stationActivity(channelId: string): Promise<{ plays: number; peakListeners: number; avgListeners: number }> {
+    const s = await this.db.query<{ plays: string; peak: number | null; avg: string | null }>(
+      `SELECT (SELECT count(*) FROM playback_history h JOIN tracks t ON t.id = h.track_id WHERE t.telegram_channel_id = $1 AND h.started_at > now() - interval '24 hours') AS plays,
+              (SELECT max(listeners) FROM listener_samples WHERE channel_id = $1 AND at > now() - interval '24 hours') AS peak,
+              (SELECT avg(listeners) FROM listener_samples WHERE channel_id = $1 AND at > now() - interval '24 hours') AS avg`,
+      [channelId],
+    );
+    const row = s.rows[0];
+    return { plays: Number(row?.plays ?? 0), peakListeners: row?.peak ?? 0, avgListeners: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
+  }
 }

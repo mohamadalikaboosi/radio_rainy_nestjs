@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { sign, verify } from 'jsonwebtoken';
+import { TokenService } from '../../shared/kernel/token-service';
 import { AdminUser, AdminUserStore } from './ports/admin-users.repository';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 
@@ -14,7 +14,7 @@ export interface AdminIdentity {
 }
 
 export interface AdminAuthConfig {
-  jwtSecret: string;
+  tokens: TokenService;
   tokenTtlSeconds: number;
 }
 
@@ -58,8 +58,8 @@ export class AdminAuthService {
   /** Signature + claims only (no database). The guard then calls `resolve` to make sure the token is still current. */
   verifyToken(token: string): AdminIdentity & { pv?: string } {
     try {
-      const payload = verify(token, this.cfg.jwtSecret, { algorithms: ['HS256'] });
-      if (typeof payload === 'string' || payload.role !== 'SUPER_ADMIN' || typeof payload.sub !== 'string') throw new Error('bad claims');
+      const payload = this.cfg.tokens.verify(token);
+      if (payload.role !== 'SUPER_ADMIN' || typeof payload.sub !== 'string') throw new Error('bad claims');
       return { email: payload.sub, role: 'SUPER_ADMIN', userId: typeof payload.uid === 'string' ? payload.uid : undefined, pv: typeof payload.pv === 'string' ? payload.pv : undefined };
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
@@ -100,7 +100,7 @@ export class AdminAuthService {
   }
 
   private issue(u: AdminUser): { token: string; expiresIn: number } {
-    const token = sign({ role: 'SUPER_ADMIN', uid: u.id, pv: pvOf(u.passwordHash) }, this.cfg.jwtSecret, { algorithm: 'HS256', subject: u.username, expiresIn: this.cfg.tokenTtlSeconds });
+    const token = this.cfg.tokens.sign({ role: 'SUPER_ADMIN', uid: u.id, pv: pvOf(u.passwordHash) }, { subject: u.username, expiresInSeconds: this.cfg.tokenTtlSeconds });
     return { token, expiresIn: this.cfg.tokenTtlSeconds };
   }
 

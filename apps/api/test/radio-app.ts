@@ -7,9 +7,8 @@ import { PgLyricsRepository } from '../src/lyrics/infrastructure/lyrics.reposito
 import { StationManager } from '../src/radio/application/station-manager';
 import { CurrentRadioService } from '../src/radio/application/current-radio.service';
 import { RadioController, STREAM_OPTIONS } from '../src/radio/interface/radio.controller';
-import { LowQualityStream } from '../src/radio/infrastructure/low-quality-stream';
+import { LowQualityStream } from '../src/radio/application/ports/low-quality-stream';
 import { Harness } from './engine-harness';
-
 
 /** Public radio API on top of a harness engine; the station registry is a stand-in that maps the channel to the harness. */
 export async function createRadioApp(db: DatabaseService, h: Harness, low?: LowQualityStream): Promise<INestApplication> {

@@ -1,6 +1,6 @@
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
-import { RtmpTarget, TelegramLiveApi } from '../application/telegram-live-streamer';
+import { RtmpTarget, TelegramLiveApi } from '../application/ports/telegram-live';
 
 /**
  * Chooses how a station goes live inside Telegram: with a manual "link + stream key" (like OBS; nothing is created through MTProto)

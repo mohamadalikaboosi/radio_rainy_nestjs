@@ -1,11 +1,7 @@
 import { ReportsService, ReportQuery, ReportSummary } from '../application/ports/reports.service';
-
 import { Injectable } from '@nestjs/common';
-
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-import { SAMPLE_EVERY_SECONDS } from '../../radio/application/listener-sampler';
-
+import { SAMPLE_EVERY_SECONDS } from '../../radio/infrastructure/listener-sampler';
 
 const RANGES: Record<ReportQuery['range'], { interval: string; bucket: 'hour' | 'day' }> = {
   '24h': { interval: '24 hours', bucket: 'hour' },

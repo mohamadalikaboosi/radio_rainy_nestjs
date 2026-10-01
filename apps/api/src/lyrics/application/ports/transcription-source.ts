@@ -1,8 +1,5 @@
 import { TranscriptionProvider } from '../../domain/transcription.types';
 
-
-
-
 /** What the transcription pipeline needs right now (settings can change at any time from the admin panel). */
 export interface TranscriptionRuntime {
   provider: TranscriptionProvider;

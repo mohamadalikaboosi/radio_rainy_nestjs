@@ -1,8 +1,6 @@
 import { realtimeEventSchema, RealtimeEvent, RealtimeBus } from '../application/ports/realtime-bus';
-
 import IORedis from 'ioredis';
 import { Logger } from '@nestjs/common';
-
 
 const CHANNEL = 'radio_rainy:realtime';
 

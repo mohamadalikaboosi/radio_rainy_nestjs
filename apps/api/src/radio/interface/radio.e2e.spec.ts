@@ -10,12 +10,11 @@ import { buildHarness, Harness, waitFor } from '../../../test/engine-harness';
 import { createRadioApp } from '../../../test/radio-app';
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { LowQualityStream, DEFAULT_LOW } from '../infrastructure/low-quality-stream';
+import { LowQualityStream } from '../application/ports/low-quality-stream';
+import { DEFAULT_LOW, FfmpegLowQualityStream } from '../infrastructure/low-quality-stream';
 import { PgLyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
-
-
 
 describe('public radio API (e2e, real HTTP)', () => {
   let db: DatabaseService;
@@ -56,7 +55,7 @@ describe('public radio API (e2e, real HTTP)', () => {
 
   const withLow = async (ffmpegPath: string): Promise<LowQualityStream> => {
     await app.close();
-    const low = new LowQualityStream(h.broadcaster, { ...DEFAULT_LOW, ffmpegPath, restartMinMs: 20 });
+    const low = new FfmpegLowQualityStream(h.broadcaster, { ...DEFAULT_LOW, ffmpegPath, restartMinMs: 20 });
     app = await createRadioApp(db, h, low);
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     return low;

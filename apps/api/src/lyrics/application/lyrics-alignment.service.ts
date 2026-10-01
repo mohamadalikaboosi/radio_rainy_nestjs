@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { detectLanguage } from '../domain/language-detect';
-import { LexiconRepository } from './lexicon';
+import { LexiconRepository } from './ports/lexicon.repository';
 import { LyricsRepository, StoredSyncedLyrics } from './ports/lyrics.repository';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { ALIGNMENT_ALGORITHM_VERSION, alignLyrics, AlignmentFailureReason } from '../domain/lyrics-aligner';

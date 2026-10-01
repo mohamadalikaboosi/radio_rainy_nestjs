@@ -5,7 +5,6 @@ import { DatabaseService } from '../../shared/infrastructure/database/database.s
 import { PgAdminUsersRepository } from '../infrastructure/admin-users.repository';
 import { resetAdminPassword } from '../application/admin-seeder';
 
-
 describe('first start: seeded admin / admin, forced password change, reset (e2e)', () => {
   let app: INestApplication;
   let restore: () => void;

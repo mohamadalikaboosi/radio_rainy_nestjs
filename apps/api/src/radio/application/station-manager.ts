@@ -3,7 +3,7 @@ import { ChannelRepository, ChannelRow } from '../../catalog/application/ports/c
 import { TelegramLiveStreamer } from '../../live/application/telegram-live-streamer';
 import { RadioStateRepository } from './ports/radio-state.repository';
 import { Broadcaster } from '../domain/broadcaster';
-import { LowQualityStream } from '../infrastructure/low-quality-stream';
+import { LowQualityStream } from './ports/low-quality-stream';
 import { PlaybackEngine } from './playback-engine';
 
 /** Everything that makes one channel a running radio station. */

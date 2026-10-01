@@ -3,8 +3,6 @@ import { Injectable } from '@nestjs/common';
 import { normalizeHashtag } from '../../domain/caption-parser';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.service';
 
-
-
 const SORT_SQL: Record<TrackQuery['sort'], string> = {
   createdAt: 't.created_at',
   title: 'lower(t.title)',

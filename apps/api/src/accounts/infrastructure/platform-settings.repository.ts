@@ -1,9 +1,6 @@
 import { PlatformSettingsRepository, PlatformSettings } from '../application/ports/platform-settings.repository';
-
 import { Injectable } from '@nestjs/common';
-
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
 
 export const DEFAULT_PLATFORM: PlatformSettings = {
   billingEnabled: false,

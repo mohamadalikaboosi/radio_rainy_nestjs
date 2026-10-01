@@ -11,7 +11,7 @@ import { InlineQueue } from '../test/inline-queue';
 import { createRadioApp } from '../test/radio-app';
 import { freshDb } from '../test/test-db';
 import { LyricsAlignmentService } from './lyrics/application/lyrics-alignment.service';
-import { LexiconRepository } from './lyrics/application/lexicon';
+import { PgLexiconRepository } from './lyrics/infrastructure/lexicon.repository';
 import { DatabaseService } from './shared/infrastructure/database/database.service';
 import { LyricsPipeline } from './lyrics/application/lyrics-pipeline';
 import { LyricsError } from './lyrics/domain/lyrics.errors';
@@ -21,11 +21,10 @@ import { LyricsSource } from './lyrics/application/ports/lyrics-source';
 import { TelegramTrackDiscovery } from './catalog/application/track-discovery';
 import { PgTrackRepository } from './catalog/infrastructure/persistence/track.repository';
 import { AudioPreprocessor } from './lyrics/infrastructure/audio-preprocessor';
+import { TelegramAudioStaging } from './lyrics/infrastructure/telegram-audio-staging';
 import { TrackTranscriptionService } from './lyrics/application/track-transcription.service';
 import { TranscriptionError } from './lyrics/domain/transcription.errors';
 import { AudioInput, Transcript, TranscriptionProvider } from './lyrics/domain/transcription.types';
-
-
 
 /** 2-second tracks: 40000 bytes at 20000 B/s. Byte value = message id. */
 const SONGS = {
@@ -76,8 +75,8 @@ describe('FULL FLOW: Telegram -> lyrics AI -> radio -> stream -> live lyrics -> 
     const pipeline = new LyricsPipeline(
       queue,
       new LyricsService(telegraph, lyricsRepo, tracks, 3600),
-      new TrackTranscriptionService({ current: async () => ({ provider: whisper, identity: { provider: 'fake', model: 'fake-1' }, language: undefined, sampleRate: 48000 }) }, gw, prepare, tracks, lyricsRepo, mkdtempSync(join(tmpdir(), 'ff-'))),
-      new LyricsAlignmentService(lyricsRepo, new LexiconRepository(db), tracks),
+      new TrackTranscriptionService({ current: async () => ({ provider: whisper, identity: { provider: 'fake', model: 'fake-1' }, language: undefined, sampleRate: 48000 }) }, new TelegramAudioStaging(gw, prepare, mkdtempSync(join(tmpdir(), 'ff-'))), tracks, lyricsRepo),
+      new LyricsAlignmentService(lyricsRepo, new PgLexiconRepository(db), tracks),
       tracks,
     );
     queue.pipeline = pipeline;

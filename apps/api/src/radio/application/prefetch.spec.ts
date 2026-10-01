@@ -7,7 +7,6 @@ import { TelegramTrackDiscovery } from '../../catalog/application/track-discover
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { PlaybackEvent } from './playback-engine';
 
-
 /** A valid-looking MPEG frame header followed by `fill` so the corruption check accepts it. 1 s = 20000 B. */
 const audio = (fill: number): Buffer => Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x00]), Buffer.alloc(19996, fill)]);
 const addTrack = (gw: FakeTelegramGateway, id: number, data: Buffer = audio(id)): void => gw.add(audioMsg(id, `Artist - Song ${id}`, { size: 20000, duration: 1 }), [data]);

@@ -1,9 +1,6 @@
 import { EngagementSettingsRepository, EngagementSettings } from '../application/ports/engagement-settings.repository';
-
 import { Injectable } from '@nestjs/common';
-
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
 
 export const DEFAULT_ENGAGEMENT: EngagementSettings = {
   adsEveryNTracks: 0,
