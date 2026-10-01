@@ -2,8 +2,9 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { bootAdminApp } from '../../../test/admin-app';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { AdminUsersRepository } from '../infrastructure/admin-users.repository';
+import { PgAdminUsersRepository } from '../infrastructure/admin-users.repository';
 import { resetAdminPassword } from '../application/admin-seeder';
+
 
 describe('first start: seeded admin / admin, forced password change, reset (e2e)', () => {
   let app: INestApplication;
@@ -66,7 +67,7 @@ describe('first start: seeded admin / admin, forced password change, reset (e2e)
 
   it('the reset command restores access after a forgotten password (random password, change forced again)', async () => {
     const db = app.get(DatabaseService);
-    const r = await resetAdminPassword(new AdminUsersRepository(db), 'admin');
+    const r = await resetAdminPassword(new PgAdminUsersRepository(db), 'admin');
     expect(r.generated).toBe(true);
     const login = await http().post('/admin/auth/login').send({ username: 'admin', password: r.password }).expect(200);
     expect(login.body.mustChangePassword).toBe(true);

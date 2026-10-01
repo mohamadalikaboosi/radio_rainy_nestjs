@@ -1,23 +1,7 @@
+import { PlatformSettingsRepository, PlatformSettings } from '../application/ports/platform-settings.repository';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-/**
- * Operator switches. `billingEnabled` is OFF by default: everything is free and nothing is ever charged, limited or blocked for money.
- * Turn it on later (panel -> Platform) and the prices / credit checks below start to apply, with no code change.
- */
-export interface PlatformSettings {
-  billingEnabled: boolean;
-  selfSignupEnabled: boolean;
-  /** true: a campaign needs the operator's approval before it plays. */
-  campaignApprovalRequired: boolean;
-  /** Smallest currency unit (e.g. toman/rial/cent). Only used while billingEnabled. */
-  pricePerPlayCents: number;
-  pricePerClickCents: number;
-  currency: string;
-  /** 0 = unlimited. */
-  maxCampaignsPerAccount: number;
-}
 
 export const DEFAULT_PLATFORM: PlatformSettings = {
   billingEnabled: false,
@@ -43,7 +27,7 @@ const KEY = 'platform';
 const TTL_MS = 5000;
 
 @Injectable()
-export class PlatformSettingsRepository {
+export class PgPlatformSettingsRepository implements PlatformSettingsRepository {
   private cache: { at: number; value: PlatformSettings } | null = null;
 
   constructor(private readonly db: DatabaseService, private readonly now: () => number = () => Date.now()) {}

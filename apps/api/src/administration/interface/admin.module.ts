@@ -2,23 +2,24 @@ import { Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common'
 import { APP_CONFIG, AppConfig } from '../../shared/infrastructure/config/app-config';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsPipeline } from '../../lyrics/application/lyrics-pipeline';
-import { LyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
-import { PlaybackHistoryRepository } from '../../radio/infrastructure/playback-history.repository';
+import { LyricsRepository } from '../../lyrics/application/ports/lyrics.repository';
+import { PlaybackHistoryRepository } from '../../radio/application/ports/playback-history.repository';
 import { RADIO_BUS, RadioBus } from '../../radio/infrastructure/radio-bus';
-import { RadioConfigRepository } from '../../radio/infrastructure/radio-config.repository';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { RadioConfigRepository } from '../../radio/application/ports/radio-config.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ChannelService } from '../../catalog/application/channel.service';
 import { StationManager } from '../../radio/application/station-manager';
 import { TELEGRAM_GATEWAY, TelegramGateway } from '../../catalog/application/ports/telegram.types';
 import { RadioConfigurationService } from '../../radio/application/radio-configuration.service';
-import { RadioStateRepository } from '../../radio/infrastructure/radio-state.repository';
+import { RadioStateRepository } from '../../radio/application/ports/radio-state.repository';
 import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { AdminAuthService } from '../application/admin-auth.service';
 import { AdminGuard } from './admin.guard';
-import { AdminUsersRepository } from '../infrastructure/admin-users.repository';
+import { AdminUsersRepository } from '../application/ports/admin-users.repository';
+import { PgAdminUsersRepository } from '../infrastructure/admin-users.repository';
 import { seedAdmin } from '../application/admin-seeder';
 import { AdminAuthController, AdminChannelsController, AdminLiveController, AdminReportsController, AdminDashboardController, AdminHashtagsController, AdminRadioController, AdminTelegramController, AdminTracksController } from './admin.controllers';
 import { AdminMessagesController } from '../../realtime/interface/messages.controllers';
@@ -37,7 +38,8 @@ import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
 import { RadioControlService } from '../../radio/application/radio-control.service';
 import { StatsService } from '../application/stats.service';
 import { TrackAdminService } from '../../catalog/application/track-admin.service';
-import { TrackQueryRepository } from '../../catalog/infrastructure/persistence/track-query.repository';
+import { TrackQueryRepository } from '../../catalog/application/ports/track-query.repository';
+import { PgTrackQueryRepository } from '../../catalog/infrastructure/persistence/track-query.repository';
 
 /** Runs the admin seeder once the database is migrated (DatabaseService migrates on init). */
 class AdminSeederLifecycle implements OnApplicationBootstrap {
@@ -60,12 +62,12 @@ class StatsLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
 @Module({
   controllers: [AdminMessagesController, AdminPlatformController, AdminAccountsController, AdminCampaignsController, AdminStationOwnerController, AdminAdsController, AdminSponsorsController, AdminEngagementController, AdminLiveController, AdminReportsController, AdminAuthController, AdminDashboardController, AdminChannelsController, AdminTelegramController, AdminTracksController, AdminHashtagsController, AdminRadioController, AdminSettingsController, AdminLanguageController],
   providers: [
-    { provide: AdminUsersRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AdminUsersRepository(db) },
+    { provide: AdminUsersRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAdminUsersRepository(db) },
     { provide: AdminAuthService, inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminAuthService(u, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 8 * 3600 }) },
     { provide: 'ADMIN_SEEDER', inject: [AdminUsersRepository, APP_CONFIG], useFactory: (u: AdminUsersRepository, c: AppConfig) => new AdminSeederLifecycle(u, c) },
     { provide: AdminGuard, inject: [AdminAuthService], useFactory: (a: AdminAuthService) => new AdminGuard(a) },
     { provide: AuditService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AuditService(db) },
-    { provide: TrackQueryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new TrackQueryRepository(db) },
+    { provide: TrackQueryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgTrackQueryRepository(db) },
     { provide: StatsService, inject: [DatabaseService], useFactory: (db: DatabaseService) => new StatsService(db) },
     { provide: 'STATS_LIFECYCLE', inject: [StatsService], useFactory: (s: StatsService) => new StatsLifecycle(s) },
     {

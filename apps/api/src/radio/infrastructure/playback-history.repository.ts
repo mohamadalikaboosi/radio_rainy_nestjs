@@ -1,10 +1,9 @@
+import { PlaybackHistoryRepository, EndReason } from '../application/ports/playback-history.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 
-export type EndReason = 'FINISHED' | 'SKIPPED' | 'ERROR' | 'ADMIN' | 'SHUTDOWN';
-
 @Injectable()
-export class PlaybackHistoryRepository {
+export class PgPlaybackHistoryRepository implements PlaybackHistoryRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async start(trackId: string, startedAt: Date): Promise<string> {

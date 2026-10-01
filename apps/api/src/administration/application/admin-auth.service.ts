@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { sign, verify } from 'jsonwebtoken';
-import { AdminUser, AdminUserStore } from '../infrastructure/admin-users.repository';
+import { AdminUser, AdminUserStore } from './ports/admin-users.repository';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 
 export interface AdminIdentity {

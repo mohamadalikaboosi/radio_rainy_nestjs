@@ -1,4 +1,4 @@
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { RtmpTarget, TelegramLiveApi } from '../application/telegram-live-streamer';
 

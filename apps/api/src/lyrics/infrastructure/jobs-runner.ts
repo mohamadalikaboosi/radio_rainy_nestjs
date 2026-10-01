@@ -1,5 +1,5 @@
 import { Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
 import { BullMqJobQueue, BullMqWorkers } from './bullmq-job-queue';
 import { LyricsPipeline } from '../application/lyrics-pipeline';

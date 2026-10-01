@@ -3,8 +3,9 @@ import { buildHarness, Harness, waitFor } from '../../../test/engine-harness';
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { AdSource, PlayableAd } from './playback-engine';
+
 
 const AD_BYTE = 200;
 const AD_ID = '11111111-1111-4111-8111-111111111111';
@@ -56,7 +57,7 @@ describe('PlaybackEngine ads', () => {
     ads = new FakeAds();
     h = buildHarness(db, gw, {}, 1, '1001', ads);
     for (const i of [1, 2, 3, 4]) addTrack(gw, i);
-    await new TelegramTrackDiscovery(gw, new TrackRepository(db)).sync('1001');
+    await new TelegramTrackDiscovery(gw, new PgTrackRepository(db)).sync('1001');
   });
   afterEach(async () => {
     await h.engine.stop();

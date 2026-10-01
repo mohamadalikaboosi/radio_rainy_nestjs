@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LyricsError } from '../domain/lyrics.errors';
-import { LyricsRepository } from '../infrastructure/lyrics.repository';
+import { LyricsRepository } from './ports/lyrics.repository';
 import { LyricsSource } from './ports/lyrics-source';
 import { detectLanguage } from '../domain/language-detect';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 
 export type FetchOutcome =
   | { kind: 'FETCHED'; rawText: string; cached: boolean }

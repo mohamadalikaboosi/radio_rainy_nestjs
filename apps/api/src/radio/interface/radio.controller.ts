@@ -1,8 +1,8 @@
 import { Controller, Get, Header, Inject, Logger, NotFoundException, Optional, Param, Req, Res, ServiceUnavailableException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ChannelRepository, ChannelRow } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository, ChannelRow } from '../../catalog/application/ports/channel.repository';
 import { listenersOf, StationManager } from '../application/station-manager';
-import { EngagementSettingsRepository } from '../../engagement/infrastructure/engagement-settings.repository';
+import { EngagementSettingsRepository } from '../../engagement/application/ports/engagement-settings.repository';
 import { CurrentRadioService } from '../application/current-radio.service';
 import { HttpListenerSink } from '../application/http-listener-sink';
 

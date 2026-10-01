@@ -2,13 +2,17 @@ import { DatabaseService } from '../src/shared/infrastructure/database/database.
 import { TrackAudioPipeline } from '../src/radio/application/audio-pipeline';
 import { StationMetrics } from '../src/radio/application/radio-metrics';
 import { AdSource, EngineOptions, PlaybackEngine } from '../src/radio/application/playback-engine';
-import { PlaybackHistoryRepository } from '../src/radio/infrastructure/playback-history.repository';
-import { RadioConfigRepository } from '../src/radio/infrastructure/radio-config.repository';
+import { PlaybackHistoryRepository } from '../src/radio/application/ports/playback-history.repository';
+import { PgPlaybackHistoryRepository } from '../src/radio/infrastructure/playback-history.repository';
+import { RadioConfigRepository } from '../src/radio/application/ports/radio-config.repository';
+import { PgRadioConfigRepository } from '../src/radio/infrastructure/radio-config.repository';
 import { RadioScheduler } from '../src/radio/application/radio-scheduler';
-import { RadioStateRepository } from '../src/radio/infrastructure/radio-state.repository';
+import { RadioStateRepository } from '../src/radio/application/ports/radio-state.repository';
+import { PgRadioStateRepository } from '../src/radio/infrastructure/radio-state.repository';
 import { seededRng } from '../src/radio/domain/rng';
 import { Broadcaster } from '../src/radio/domain/broadcaster';
-import { TrackRepository } from '../src/catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../src/catalog/application/ports/track.repository';
+import { PgTrackRepository } from '../src/catalog/infrastructure/persistence/track.repository';
 import { FakeTelegramGateway } from './fake-telegram';
 
 /** Time-warp clock: pacing sleeps advance virtual time instantly, so a 3-minute track plays in milliseconds. */
@@ -38,10 +42,10 @@ export const CHANNEL = '1001';
 
 export function buildHarness(db: DatabaseService, gw: FakeTelegramGateway, over: Partial<EngineOptions> = {}, seed = 1, channelId = CHANNEL, ads?: AdSource, metrics?: StationMetrics): Harness {
   const clock = new VirtualClock();
-  const tracks = new TrackRepository(db);
-  const history = new PlaybackHistoryRepository(db);
-  const state = new RadioStateRepository(db);
-  const config = new RadioConfigRepository(db);
+  const tracks = new PgTrackRepository(db);
+  const history = new PgPlaybackHistoryRepository(db);
+  const state = new PgRadioStateRepository(db);
+  const config = new PgRadioConfigRepository(db);
   const scheduler = new RadioScheduler(config, history, state, undefined, seededRng(seed));
   const broadcaster = new Broadcaster(8000);
   const engine = new PlaybackEngine({

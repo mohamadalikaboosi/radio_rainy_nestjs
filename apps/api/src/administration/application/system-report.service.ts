@@ -1,6 +1,6 @@
 import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable } from '@nestjs/common';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { BullMqJobQueue } from '../../lyrics/infrastructure/bullmq-job-queue';
 import { StationManager } from '../../radio/application/station-manager';

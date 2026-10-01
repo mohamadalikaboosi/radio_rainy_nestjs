@@ -1,12 +1,12 @@
 import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable } from '@nestjs/common';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
-import { PlaybackHistoryRepository } from '../../radio/infrastructure/playback-history.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
+import { PlaybackHistoryRepository } from '../../radio/application/ports/playback-history.repository';
 import { StationManager } from '../../radio/application/station-manager';
 import { computePosition } from '../../radio/domain/playback-position';
 import { CurrentRadioService } from '../../radio/application/current-radio.service';
-import { RadioStateRepository } from '../../radio/infrastructure/radio-state.repository';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { RadioStateRepository } from '../../radio/application/ports/radio-state.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 
 interface TrackBrief {
   trackId: string;

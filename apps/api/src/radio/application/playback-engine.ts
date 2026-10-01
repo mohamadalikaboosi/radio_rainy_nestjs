@@ -3,14 +3,14 @@ import { hasMpegFrameSync } from '../../engagement/domain/mp3-info';
 import { StationMetrics } from './radio-metrics';
 import { computePosition } from '../domain/playback-position';
 import { RadioScheduler } from './radio-scheduler';
-import { RadioStateRepository } from '../infrastructure/radio-state.repository';
+import { RadioStateRepository } from './ports/radio-state.repository';
 import { Broadcaster } from '../domain/broadcaster';
 import { TelegramFloodWaitError, TelegramNotReadyError } from '../../catalog/application/ports/telegram.types';
 import { newTimeline, pace, Timeline } from '../domain/pacer';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { Track } from '../../catalog/domain/track.types';
 import { OpenedAudio, PrefetchedAudio, TrackAudioPipeline } from './audio-pipeline';
-import { EndReason, PlaybackHistoryRepository } from '../infrastructure/playback-history.repository';
+import { EndReason, PlaybackHistoryRepository } from './ports/playback-history.repository';
 
 export interface EngineOptions {
   burstSeconds: number;

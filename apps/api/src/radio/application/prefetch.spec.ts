@@ -4,8 +4,9 @@ import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { StationMetrics } from './radio-metrics';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { PlaybackEvent } from './playback-engine';
+
 
 /** A valid-looking MPEG frame header followed by `fill` so the corruption check accepts it. 1 s = 20000 B. */
 const audio = (fill: number): Buffer => Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x00]), Buffer.alloc(19996, fill)]);
@@ -43,7 +44,7 @@ describe('PlaybackEngine prefetch, fail-over, state and metrics', () => {
   beforeEach(async () => {
     db = await freshDb();
     gw = new FakeTelegramGateway();
-    discovery = new TelegramTrackDiscovery(gw, new TrackRepository(db));
+    discovery = new TelegramTrackDiscovery(gw, new PgTrackRepository(db));
   });
   afterEach(async () => {
     await h.engine.stop();

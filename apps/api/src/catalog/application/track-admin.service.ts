@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsPipeline } from '../../lyrics/application/lyrics-pipeline';
-import { LyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
+import { LyricsRepository } from '../../lyrics/application/ports/lyrics.repository';
 import { TelegramTrackDiscovery } from './track-discovery';
-import { TrackRepository } from '../infrastructure/persistence/track.repository';
+import { TrackRepository } from './ports/track.repository';
 import { ActorContext } from '../../radio/application/radio-configuration.service';
 import { AuditService } from '../../administration/application/audit.service';
 

@@ -1,6 +1,6 @@
-import { AdsRepository, BillingRule } from '../infrastructure/ads.repository';
-import type { PlatformSettings } from '../../accounts/infrastructure/platform-settings.repository';
-import { EngagementSettingsRepository } from '../infrastructure/engagement-settings.repository';
+import { AdsRepository, BillingRule } from './ports/ads.repository';
+import type { PlatformSettings } from '../../accounts/application/ports/platform-settings.repository';
+import { EngagementSettingsRepository } from './ports/engagement-settings.repository';
 import { AdSource, PlayableAd } from '../../radio/application/playback-engine';
 import { LiveTranscoder, OpenedAudio } from '../../radio/application/audio-pipeline';
 import { stripId3v2 } from '../../radio/domain/id3';

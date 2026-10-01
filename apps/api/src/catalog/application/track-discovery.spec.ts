@@ -1,7 +1,8 @@
 import { audioMsg, FakeTelegramGateway } from '../../../test/fake-telegram';
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { TrackRepository } from '../infrastructure/persistence/track.repository';
+import { TrackRepository } from './ports/track.repository';
+import { PgTrackRepository } from '../infrastructure/persistence/track.repository';
 import { TelegramTrackDiscovery } from './track-discovery';
 
 describe('TelegramTrackDiscovery', () => {
@@ -13,7 +14,7 @@ describe('TelegramTrackDiscovery', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    repo = new TrackRepository(db);
+    repo = new PgTrackRepository(db);
     gw = new FakeTelegramGateway();
     queued = [];
     discovery = new TelegramTrackDiscovery(gw, repo, { onLyricsNeedFetch: async (id) => void queued.push(id) });

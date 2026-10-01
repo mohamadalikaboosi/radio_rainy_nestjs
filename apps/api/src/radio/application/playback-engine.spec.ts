@@ -3,7 +3,8 @@ import { buildHarness, Harness, waitFor } from '../../../test/engine-harness';
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+
 
 /** Each track = 1 second of "audio" (20000 B at 20000 B/s) filled with its message id, so bytes identify the track. */
 const addTrack = (gw: FakeTelegramGateway, id: number, caption = `Artist - Song ${id}`): void =>
@@ -35,7 +36,7 @@ describe('PlaybackEngine', () => {
     gw = new FakeTelegramGateway();
     h = buildHarness(db, gw);
     extra = [];
-    discovery = new TelegramTrackDiscovery(gw, new TrackRepository(db));
+    discovery = new TelegramTrackDiscovery(gw, new PgTrackRepository(db));
   });
   afterEach(async () => {
     await Promise.all(extra.map((e) => e.engine.stop()));

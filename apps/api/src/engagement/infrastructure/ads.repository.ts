@@ -1,61 +1,8 @@
+import { AdsRepository, BillingRule, AdSummary, AdInput, AdAudio } from '../application/ports/ads.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
 import type { CampaignStatus } from '../../accounts/domain/campaign-status';
-
-/** What the ad engine needs to know about money; while billing is off nothing is ever charged or blocked. */
-export interface BillingRule {
-  enabled: boolean;
-  pricePerPlayCents: number;
-  pricePerClickCents: number;
-}
 const NO_BILLING: BillingRule = { enabled: false, pricePerPlayCents: 0, pricePerClickCents: 0 };
-
-export interface AdSummary {
-  id: string;
-  channelId: string | null;
-  accountId: string | null;
-  status: CampaignStatus;
-  reviewNote: string | null;
-  startsAt: string | null;
-  endsAt: string | null;
-  maxPlays: number | null;
-  name: string;
-  weight: number;
-  enabled: boolean;
-  linkUrl: string | null;
-  ctaLabel: string | null;
-  hasAudio: boolean;
-  audioMime: string | null;
-  audioSize: number | null;
-  durationSeconds: number | null;
-  hasImage: boolean;
-  plays: number;
-  clicks: number;
-  lastPlayedAt: string | null;
-  createdAt: string;
-}
-
-export interface AdInput {
-  channelId: string | null;
-  name: string;
-  weight: number;
-  enabled: boolean;
-  linkUrl: string | null;
-  ctaLabel: string | null;
-}
-
-export interface AdAudio {
-  id: string;
-  name: string;
-  data: Buffer;
-  mime: string;
-  bytesPerSec: number | null;
-  linkUrl: string | null;
-  ctaLabel: string | null;
-  hasImage: boolean;
-  durationSeconds: number | null;
-}
 
 interface Row {
   id: string;
@@ -112,7 +59,7 @@ const toSummary = (r: Row): AdSummary => ({
 
 /** Never selects the audio/image blobs except where a method says so. */
 @Injectable()
-export class AdsRepository {
+export class PgAdsRepository implements AdsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async list(channelId?: string): Promise<AdSummary[]> {

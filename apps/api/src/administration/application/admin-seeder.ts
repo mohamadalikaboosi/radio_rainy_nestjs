@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { AdminUserStore } from '../infrastructure/admin-users.repository';
+import { AdminUserStore } from './ports/admin-users.repository';
 import { DEFAULT_PASSWORD, DEFAULT_USERNAME } from './admin-auth.service';
 import { hashPassword } from '../../shared/kernel/password';
 

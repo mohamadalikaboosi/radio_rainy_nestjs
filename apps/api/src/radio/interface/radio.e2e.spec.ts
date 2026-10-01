@@ -11,9 +11,11 @@ import { createRadioApp } from '../../../test/radio-app';
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LowQualityStream, DEFAULT_LOW } from '../infrastructure/low-quality-stream';
-import { LyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
+import { PgLyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+
+
 
 describe('public radio API (e2e, real HTTP)', () => {
   let db: DatabaseService;
@@ -29,7 +31,7 @@ describe('public radio API (e2e, real HTTP)', () => {
     // real clock, tiny bursts: 1s tracks
     h = buildHarness(db, gw, { now: Date.now, sleep: async (ms, signal) => { await new Promise<void>((r) => { const t = setTimeout(r, ms); signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); }); } });
     for (const i of [1, 2]) gw.add(audioMsg(i, `Artist - Song ${i}\nLyrics: https://telegra.ph/s-${i}`, { size: 20000, duration: 1 }), [Buffer.alloc(20000, i)]);
-    await new TelegramTrackDiscovery(gw, new TrackRepository(db)).sync('1001');
+    await new TelegramTrackDiscovery(gw, new PgTrackRepository(db)).sync('1001');
     app = await createRadioApp(db, h);
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
   });
@@ -132,7 +134,7 @@ describe('public radio API (e2e, real HTTP)', () => {
   });
 
   it('exposes synchronized lyrics and the active line for the current track', async () => {
-    const lyricsRepo = new LyricsRepository(db);
+    const lyricsRepo = new PgLyricsRepository(db);
     const rows = (await db.query<{ id: string }>('SELECT id FROM tracks')).rows;
     for (const r of rows) {
       await lyricsRepo.saveSynced(r.id, [

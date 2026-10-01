@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LyricsAlignmentService } from './lyrics-alignment.service';
 import { LyricsService } from './lyrics.service';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { TrackTranscriptionService } from './track-transcription.service';
 import { TranscriptionError } from '../domain/transcription.errors';
 import { AttemptContext, JobQueue, LyricsJobPayload } from './ports/job-queues';

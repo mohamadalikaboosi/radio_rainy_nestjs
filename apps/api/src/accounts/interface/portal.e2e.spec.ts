@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { ADMIN, bootAdminApp } from '../../../test/admin-app';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { AdsRepository, BillingRule } from '../../engagement/infrastructure/ads.repository';
+import { AdsRepository, BillingRule } from '../../engagement/application/ports/ads.repository';
 import { InvalidTransitionError, transition } from '../domain/campaign-status';
 import { PortalAuthService } from '../application/portal-auth.service';
 

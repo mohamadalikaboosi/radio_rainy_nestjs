@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { RadioBus } from '../../radio/infrastructure/radio-bus';
 import { Rng, cryptoRng } from '../../radio/domain/rng';
-import { EngagementSettingsRepository } from '../infrastructure/engagement-settings.repository';
-import { TagPoll, TagPollRepository } from '../infrastructure/tag-poll.repository';
+import { EngagementSettingsRepository } from './ports/engagement-settings.repository';
+import { TagPoll, TagPollRepository } from './ports/tag-poll.repository';
 
 const MAX_VOTERS_PER_IP = 20;
 const MIN_TRACKS_PER_TAG = 2;

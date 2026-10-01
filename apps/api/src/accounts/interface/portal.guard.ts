@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
-import { AccountsRepository } from '../infrastructure/accounts.repository';
+import { AccountsRepository } from '../application/ports/accounts.repository';
 import { PortalAuthService, PortalIdentity } from '../application/portal-auth.service';
 
 export type PortalRequest = Request & { portal: PortalIdentity };

@@ -1,33 +1,6 @@
+import { SponsorsRepository, Sponsor, SponsorInput } from '../application/ports/sponsors.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-export interface Sponsor {
-  id: string;
-  channelId: string | null;
-  name: string;
-  tagline: string | null;
-  url: string;
-  ctaLabel: string;
-  hasLogo: boolean;
-  weight: number;
-  enabled: boolean;
-  startsAt: string | null;
-  endsAt: string | null;
-  impressions: number;
-  clicks: number;
-}
-
-export interface SponsorInput {
-  channelId: string | null;
-  name: string;
-  tagline: string | null;
-  url: string;
-  ctaLabel: string;
-  weight: number;
-  enabled: boolean;
-  startsAt: string | null;
-  endsAt: string | null;
-}
 
 interface Row {
   id: string;
@@ -63,7 +36,7 @@ const toSponsor = (r: Row): Sponsor => ({
 });
 
 @Injectable()
-export class SponsorsRepository {
+export class PgSponsorsRepository implements SponsorsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async list(channelId?: string): Promise<Sponsor[]> {

@@ -2,11 +2,11 @@ import { Logger } from '@nestjs/common';
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { TagVoteService } from '../../engagement/application/tag-vote.service';
 import { StationManager } from '../../radio/application/station-manager';
 import { CurrentRadioService } from '../../radio/application/current-radio.service';
-import { LiveMessage, MessagesRepository } from '../infrastructure/messages.repository';
+import { LiveMessage, MessagesRepository } from '../application/ports/messages.repository';
 import { RealtimeBus, RealtimeEvent } from '../infrastructure/events';
 
 export interface RealtimeOptions {

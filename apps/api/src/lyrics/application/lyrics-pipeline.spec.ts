@@ -8,11 +8,13 @@ import { LyricsAlignmentService } from './lyrics-alignment.service';
 import { LexiconRepository } from './lexicon';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { LyricsError } from '../domain/lyrics.errors';
-import { LyricsRepository } from '../infrastructure/lyrics.repository';
+import { LyricsRepository } from './ports/lyrics.repository';
+import { PgLyricsRepository } from '../infrastructure/lyrics.repository';
 import { LyricsService } from './lyrics.service';
 import { LyricsSource } from './ports/lyrics-source';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { AudioPreprocessor } from '../infrastructure/audio-preprocessor';
 import { TrackTranscriptionService } from './track-transcription.service';
 import { TranscriptionError } from '../domain/transcription.errors';
@@ -75,8 +77,8 @@ describe('lyrics pipeline', () => {
 
   async function setup(withWhisper = true): Promise<void> {
     db = await freshDb();
-    tracks = new TrackRepository(db);
-    lyricsRepo = new LyricsRepository(db);
+    tracks = new PgTrackRepository(db);
+    lyricsRepo = new PgLyricsRepository(db);
     gw = new FakeTelegramGateway();
     src = new FakeSource();
     whisper = new FakeWhisper();

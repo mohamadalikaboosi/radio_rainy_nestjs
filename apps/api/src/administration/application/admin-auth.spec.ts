@@ -1,6 +1,6 @@
 import { BadRequestException, HttpException, UnauthorizedException } from '@nestjs/common';
 import { sign } from 'jsonwebtoken';
-import { AdminUser, AdminUserStore } from '../infrastructure/admin-users.repository';
+import { AdminUser, AdminUserStore } from './ports/admin-users.repository';
 import { AdminAuthService, passwordPolicy } from './admin-auth.service';
 import { resetAdminPassword, seedAdmin } from './admin-seeder';
 import { scrub } from './audit.service';

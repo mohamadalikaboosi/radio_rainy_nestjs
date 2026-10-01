@@ -1,33 +1,10 @@
+import { LyricsRepository, StoredLyrics, StoredSyncedLyrics, StoredTranscript } from '../application/ports/lyrics.repository';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { Injectable } from '@nestjs/common';
 import { AlignedLine } from '../domain/lyrics-aligner';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { Transcript } from '../domain/transcription.types';
-
-export interface StoredLyrics {
-  trackId: string;
-  sourceUrl: string;
-  rawText: string | null;
-  status: 'PENDING' | 'FETCHED' | 'FAILED';
-  error: string | null;
-  fetchedAt: Date | null;
-  expiresAt: Date | null;
-}
-
-export interface StoredSyncedLyrics {
-  id: string;
-  trackId: string;
-  version: number;
-  lines: AlignedLine[];
-  quality: number;
-  algorithmVersion: string;
-  createdAt: Date;
-}
-
-export interface StoredTranscript extends Transcript {
-  id: string;
-}
 
 interface LyricsRow {
   track_id: string;
@@ -50,7 +27,7 @@ const mapLyrics = (r: LyricsRow): StoredLyrics => ({
 });
 
 @Injectable()
-export class LyricsRepository {
+export class PgLyricsRepository implements LyricsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async getLyrics(trackId: string): Promise<StoredLyrics | null> {

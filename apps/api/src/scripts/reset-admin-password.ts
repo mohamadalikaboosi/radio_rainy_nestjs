@@ -1,6 +1,7 @@
-import { AdminUsersRepository } from '../administration/infrastructure/admin-users.repository';
+import { PgAdminUsersRepository } from '../administration/infrastructure/admin-users.repository';
 import { resetAdminPassword } from '../administration/application/admin-seeder';
 import { DatabaseService } from '../shared/infrastructure/database/database.service';
+
 
 /**
  * Forgot the Super Admin password?
@@ -17,7 +18,7 @@ async function main(): Promise<void> {
   const db = new DatabaseService({ DATABASE_URL: url });
   try {
     await db.migrate();
-    const r = await resetAdminPassword(new AdminUsersRepository(db), username, password);
+    const r = await resetAdminPassword(new PgAdminUsersRepository(db), username, password);
     process.stdout.write(`Super Admin "${r.username}" password ${r.generated ? `reset to: ${r.password}\n(you will be asked to change it at the next login)` : 'updated.'}\n`);
   } finally {
     await db.onModuleDestroy();

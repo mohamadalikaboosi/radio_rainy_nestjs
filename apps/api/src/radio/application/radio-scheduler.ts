@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PlaybackHistoryRepository } from '../infrastructure/playback-history.repository';
-import { RadioConfigRepository } from '../infrastructure/radio-config.repository';
+import { PlaybackHistoryRepository } from './ports/playback-history.repository';
+import { RadioConfigRepository } from './ports/radio-config.repository';
 import { RadioRuleEngine } from '../domain/radio-rule-engine';
-import { RadioStateRepository } from '../infrastructure/radio-state.repository';
+import { RadioStateRepository } from './ports/radio-state.repository';
 import { SelectionResult } from '../domain/radio.types';
 import { Rng, cryptoRng } from '../domain/rng';
 

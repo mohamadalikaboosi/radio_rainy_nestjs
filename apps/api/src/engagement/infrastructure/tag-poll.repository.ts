@@ -1,17 +1,6 @@
+import { TagPollRepository, TagPoll } from '../application/ports/tag-poll.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-export interface TagPoll {
-  id: string;
-  channelId: string;
-  options: string[];
-  opensAt: Date;
-  closesAt: Date;
-  status: 'OPEN' | 'CLOSED';
-  winner: string | null;
-  playUntil: Date | null;
-  finished: boolean;
-}
 
 interface Row {
   id: string;
@@ -30,7 +19,7 @@ const toPoll = (r: Row): TagPoll => ({ id: r.id, channelId: r.channel_id, option
 export class VoteLimitError extends Error {}
 
 @Injectable()
-export class TagPollRepository {
+export class PgTagPollRepository implements TagPollRepository {
   constructor(private readonly db: DatabaseService) {}
 
   /** The poll that matters right now: an OPEN one, or a CLOSED one whose winner is still playing. */

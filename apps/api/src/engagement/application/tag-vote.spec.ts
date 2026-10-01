@@ -1,14 +1,19 @@
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { RadioCommand } from '../../radio/infrastructure/radio-bus';
-import { RadioConfigRepository } from '../../radio/infrastructure/radio-config.repository';
+import { PgRadioConfigRepository } from '../../radio/infrastructure/radio-config.repository';
 import { RadioScheduler } from '../../radio/application/radio-scheduler';
-import { RadioStateRepository } from '../../radio/infrastructure/radio-state.repository';
-import { PlaybackHistoryRepository } from '../../radio/infrastructure/playback-history.repository';
+import { PgRadioStateRepository } from '../../radio/infrastructure/radio-state.repository';
+import { PgPlaybackHistoryRepository } from '../../radio/infrastructure/playback-history.repository';
 import { seededRng } from '../../radio/domain/rng';
-import { EngagementSettingsRepository } from '../infrastructure/engagement-settings.repository';
-import { TagPollRepository } from '../infrastructure/tag-poll.repository';
+import { EngagementSettingsRepository } from './ports/engagement-settings.repository';
+import { PgEngagementSettingsRepository } from '../infrastructure/engagement-settings.repository';
+import { PgTagPollRepository } from '../infrastructure/tag-poll.repository';
 import { pickWinner, TagVoteService } from './tag-vote.service';
+
+
+
+
 
 const MIN = 60_000;
 
@@ -47,8 +52,8 @@ describe('TagVoteService', () => {
     db = await freshDb();
     now = Date.parse('2026-01-01T10:00:00Z');
     published = [];
-    settings = new EngagementSettingsRepository(db);
-    svc = new TagVoteService(settings, new TagPollRepository(db), { publish: async (c) => void published.push(c) }, seededRng(7), () => now);
+    settings = new PgEngagementSettingsRepository(db);
+    svc = new TagVoteService(settings, new PgTagPollRepository(db), { publish: async (c) => void published.push(c) }, seededRng(7), () => now);
     for (let i = 1; i <= 3; i++) await seedTrack(i, ['rock']);
     for (let i = 4; i <= 6; i++) await seedTrack(i, ['jazz']);
     await seedTrack(7, ['lonely']); // only one track: never offered
@@ -131,7 +136,7 @@ describe('TagVoteService', () => {
   });
 
   it('the scheduler plays only the winning tag while it is active, then returns to the configured mode', async () => {
-    const scheduler = new RadioScheduler(new RadioConfigRepository(db), new PlaybackHistoryRepository(db), new RadioStateRepository(db), undefined, seededRng(1), svc);
+    const scheduler = new RadioScheduler(new PgRadioConfigRepository(db), new PgPlaybackHistoryRepository(db), new PgRadioStateRepository(db), undefined, seededRng(1), svc);
     await svc.tick(CH);
     for (let i = 0; i < 4; i++) await svc.vote(CH, `voter-${String(i).padStart(8, '0')}`, `2.2.2.${i}`, 'rock');
     now += 3 * MIN + 1;
@@ -145,11 +150,11 @@ describe('TagVoteService', () => {
   });
 
   it('bumps the configuration version so the engine drops its pre-selected track', async () => {
-    const before = (await new RadioStateRepository(db).get(CH)).configurationVersion;
+    const before = (await new PgRadioStateRepository(db).get(CH)).configurationVersion;
     await svc.tick(CH);
     await svc.vote(CH, 'voter-aaaaaaaa', '1.1.1.1', 'rock');
     now += 3 * MIN + 1;
     await svc.tick(CH);
-    expect((await new RadioStateRepository(db).get(CH)).configurationVersion).toBeGreaterThan(before);
+    expect((await new PgRadioStateRepository(db).get(CH)).configurationVersion).toBeGreaterThan(before);
   });
 });

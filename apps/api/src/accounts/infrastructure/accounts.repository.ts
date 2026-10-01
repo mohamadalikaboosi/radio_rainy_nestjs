@@ -1,33 +1,6 @@
+import { AccountsRepository, Account, AccountUser, AccountSummary, LedgerEntry } from '../application/ports/accounts.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-export interface Account {
-  id: string;
-  name: string;
-  status: 'ACTIVE' | 'SUSPENDED';
-  creditCents: number;
-  createdAt: string;
-}
-export interface AccountUser {
-  id: string;
-  accountId: string;
-  email: string;
-  passwordHash: string;
-}
-export interface AccountSummary extends Account {
-  email: string | null;
-  campaigns: number;
-  stations: number;
-}
-export interface LedgerEntry {
-  id: number;
-  amountCents: number;
-  balanceAfter: number;
-  kind: 'TOPUP' | 'PLAY' | 'CLICK' | 'ADJUST';
-  refId: string | null;
-  note: string | null;
-  createdAt: string;
-}
 
 interface AccRow {
   id: string;
@@ -41,7 +14,7 @@ const toAccount = (r: AccRow): Account => ({ id: r.id, name: r.name, status: r.s
 export class EmailTakenError extends Error {}
 
 @Injectable()
-export class AccountsRepository {
+export class PgAccountsRepository implements AccountsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async create(name: string, email: string, passwordHash: string): Promise<{ account: Account; userId: string }> {

@@ -2,10 +2,10 @@ import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Par
 import { z } from 'zod';
 import { AdminGuard, AdminRequest } from '../../administration/interface/admin.guard';
 import { AuditService } from '../../administration/application/audit.service';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { REALTIME_BUS, RealtimeBus } from '../infrastructure/events';
-import { MessageInput, MessagesRepository, messageSchema } from '../infrastructure/messages.repository';
+import { MessageInput, MessagesRepository, messageSchema } from '../application/ports/messages.repository';
 
 const ChannelIdPipe = new ZodPipe(z.string().regex(/^\d{1,20}$/, 'invalid channel id'));
 

@@ -1,22 +1,10 @@
+import { RadioConfigRepository, RadioConfigWithMeta } from '../application/ports/radio-config.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService, Queryable } from '../../shared/infrastructure/database/database.service';
-import {
-  HashtagMatchMode,
-  HashtagSelection,
-  RadioConfigSnapshot,
-  RadioMode,
-  RadioRuleSnapshot,
-  TrackCandidate,
-} from '../domain/radio.types';
-
-export interface RadioConfigWithMeta {
-  snapshot: RadioConfigSnapshot;
-  enabled: boolean;
-  version: number;
-}
+import { HashtagMatchMode, HashtagSelection, RadioMode, RadioRuleSnapshot, TrackCandidate } from '../domain/radio.types';
 
 @Injectable()
-export class RadioConfigRepository {
+export class PgRadioConfigRepository implements RadioConfigRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async getSnapshot(channelId: string, q: Queryable = this.db): Promise<RadioConfigWithMeta> {

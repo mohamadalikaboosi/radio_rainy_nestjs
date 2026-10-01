@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { AlignedLine } from '../../lyrics/domain/lyrics-aligner';
 import { parseLyricLines } from '../../lyrics/domain/normalize';
-import { LyricsRepository } from '../../lyrics/infrastructure/lyrics.repository';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { LyricsRepository } from '../../lyrics/application/ports/lyrics.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 import { Track } from '../../catalog/domain/track.types';
 import { computePosition, findActiveLine, ActiveLine } from '../domain/playback-position';
-import { RadioStateRepository, RadioStateRow } from '../infrastructure/radio-state.repository';
+import { RadioStateRepository, RadioStateRow } from './ports/radio-state.repository';
 import { RadioStatus } from '../domain/radio.types';
 
 export interface AdView {

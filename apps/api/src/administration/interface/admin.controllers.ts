@@ -19,7 +19,7 @@ import { DashboardService } from '../application/dashboard.service';
 import { RadioControlService } from '../../radio/application/radio-control.service';
 import { StatsService } from '../application/stats.service';
 import { TrackAdminService } from '../../catalog/application/track-admin.service';
-import { TrackQuery, TrackQueryRepository, trackQuerySchema } from '../../catalog/infrastructure/persistence/track-query.repository';
+import { TrackQuery, TrackQueryRepository, trackQuerySchema } from '../../catalog/application/ports/track-query.repository';
 
 const ctxOf = (req: AdminRequest): ActorContext => ({ actor: req.admin.email, requestId: req.id === undefined ? null : String(req.id) });
 

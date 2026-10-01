@@ -1,4 +1,4 @@
-import { ChannelRow } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRow } from '../../catalog/application/ports/channel.repository';
 import { Broadcaster } from '../domain/broadcaster';
 import { Station, StationManager } from './station-manager';
 

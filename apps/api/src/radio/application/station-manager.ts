@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
-import { ChannelRepository, ChannelRow } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository, ChannelRow } from '../../catalog/application/ports/channel.repository';
 import { TelegramLiveStreamer } from '../../live/application/telegram-live-streamer';
-import { RadioStateRepository } from '../infrastructure/radio-state.repository';
+import { RadioStateRepository } from './ports/radio-state.repository';
 import { Broadcaster } from '../domain/broadcaster';
 import { LowQualityStream } from '../infrastructure/low-quality-stream';
 import { PlaybackEngine } from './playback-engine';

@@ -7,10 +7,11 @@ import { freshDb } from '../../../../test/test-db';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.service';
 import { RadioMetrics } from '../../../radio/application/radio-metrics';
 import { TelegramTrackDiscovery } from '../../application/track-discovery';
-import { TrackRepository } from '../persistence/track.repository';
+import { PgTrackRepository } from '../persistence/track.repository';
 import { resolverFrom } from './caching-gateway';
 import { DiskAudioCache } from './disk-audio-cache';
 import { DiskCachingGateway } from './disk-caching-gateway';
+
 
 const audio = (fill: number): Buffer => Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x00]), Buffer.alloc(19996, fill)]);
 
@@ -26,9 +27,9 @@ describe('engine + DiskCachingGateway (Telegram is hit once per track)', () => {
     dir = await mkdtemp(join(tmpdir(), 'rr-gw-'));
     fake = new FakeTelegramGateway();
     for (const i of [1, 2, 3]) fake.add(audioMsg(i, `Artist - Song ${i}`, { size: 20000, duration: 1 }), [audio(i)]);
-    await new TelegramTrackDiscovery(fake, new TrackRepository(db)).sync('1001');
+    await new TelegramTrackDiscovery(fake, new PgTrackRepository(db)).sync('1001');
     metrics = new RadioMetrics();
-    const tracks = new TrackRepository(db);
+    const tracks = new PgTrackRepository(db);
     const cache = new DiskAudioCache({ dir, maxBytes: 50_000_000, maxConcurrentFills: 2 }, metrics.cache);
     const cached = new DiskCachingGateway(fake, cache, resolverFrom((c, m) => tracks.getAudioIdentity(c, m)));
     h = buildHarness(db, cached as unknown as FakeTelegramGateway, { validateAudio: true });

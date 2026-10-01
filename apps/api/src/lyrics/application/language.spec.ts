@@ -1,8 +1,10 @@
 import { freshDb } from '../../../test/test-db';
 import { LyricsAlignmentService } from './lyrics-alignment.service';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { LyricsRepository } from '../infrastructure/lyrics.repository';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { LyricsRepository } from './ports/lyrics.repository';
+import { PgLyricsRepository } from '../infrastructure/lyrics.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
+import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { LanguageService, parseReview } from './language.service';
 import { LexiconRepository } from './lexicon';
 import { LlmNotConfiguredError, OpenAiCompatibleLlm } from '../infrastructure/llm-client';
@@ -45,8 +47,8 @@ describe('language learning end to end (real DB)', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    lyrics = new LyricsRepository(db);
-    tracks = new TrackRepository(db);
+    lyrics = new PgLyricsRepository(db);
+    tracks = new PgTrackRepository(db);
     lexicon = new LexiconRepository(db);
     align = new LyricsAlignmentService(lyrics, lexicon, tracks);
   });

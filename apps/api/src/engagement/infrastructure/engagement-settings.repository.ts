@@ -1,18 +1,7 @@
+import { EngagementSettingsRepository, EngagementSettings } from '../application/ports/engagement-settings.repository';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-export interface EngagementSettings {
-  adsEveryNTracks: number;
-  tagVoteEnabled: boolean;
-  tagVoteIntervalMinutes: number;
-  tagVotePollMinutes: number;
-  tagVotePlayMinutes: number;
-  tagVoteOptions: number;
-  tagVoteAllowlist: string[];
-  /** How the public player receives the audio. The HTTP stream URL keeps working either way. */
-  audioTransport: 'HTTP' | 'WEBSOCKET';
-}
 
 export const DEFAULT_ENGAGEMENT: EngagementSettings = {
   adsEveryNTracks: 0,
@@ -50,7 +39,7 @@ interface Row {
 const normalizeTag = (t: string): string => t.replace(/^#/, '').trim().toLowerCase();
 
 @Injectable()
-export class EngagementSettingsRepository {
+export class PgEngagementSettingsRepository implements EngagementSettingsRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async get(channelId: string): Promise<EngagementSettings> {

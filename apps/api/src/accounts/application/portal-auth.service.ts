@@ -2,8 +2,9 @@ import { ForbiddenException, HttpException, HttpStatus, Injectable, Unauthorized
 import { sign, verify } from 'jsonwebtoken';
 import { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
-import { AccountsRepository, EmailTakenError } from '../infrastructure/accounts.repository';
-import { PlatformSettingsRepository } from '../infrastructure/platform-settings.repository';
+import { AccountsRepository } from './ports/accounts.repository';
+import { EmailTakenError } from '../infrastructure/accounts.repository';
+import { PlatformSettingsRepository } from './ports/platform-settings.repository';
 
 export interface PortalIdentity {
   accountId: string;

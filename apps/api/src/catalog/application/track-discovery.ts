@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { TrackRepository } from '../infrastructure/persistence/track.repository';
+import { TrackRepository } from './ports/track.repository';
 import { parseCaption } from '../domain/caption-parser';
 import { TelegramAudioMessage, TelegramGateway } from './ports/telegram.types';
 

@@ -2,12 +2,13 @@ import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException
 import { z } from 'zod';
 import { AdminGuard, AdminRequest } from '../../administration/interface/admin.guard';
 import { AuditService } from '../../administration/application/audit.service';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
-import { AdsRepository } from '../../engagement/infrastructure/ads.repository';
-import { AccountsRepository } from '../infrastructure/accounts.repository';
+import { AdsRepository } from '../../engagement/application/ports/ads.repository';
+import { AccountsRepository } from '../application/ports/accounts.repository';
 import { CampaignAction, CampaignStatus, InvalidTransitionError, transition } from '../domain/campaign-status';
-import { PlatformSettings, PlatformSettingsRepository, platformSchema } from '../infrastructure/platform-settings.repository';
+import { PlatformSettings, PlatformSettingsRepository } from '../application/ports/platform-settings.repository';
+import { platformSchema } from '../infrastructure/platform-settings.repository';
 
 const ChannelIdPipe = new ZodPipe(z.string().regex(/^\d{1,20}$/, 'invalid channel id'));
 const actor = (req: AdminRequest): { actor: string; requestId: string | null } => ({ actor: req.admin.email, requestId: req.id === undefined ? null : String(req.id) });

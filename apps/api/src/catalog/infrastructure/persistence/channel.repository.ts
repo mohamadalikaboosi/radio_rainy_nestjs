@@ -1,28 +1,7 @@
+import { ChannelRepository, LiveStatus, ChannelRow } from '../../application/ports/channel.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.service';
 import { ChannelDirectory } from '../../application/ports/telegram.types';
-
-export type LiveStatus = 'OFF' | 'STARTING' | 'LIVE' | 'ERROR';
-
-/** One Telegram channel = one radio station. `id` is the Telegram channel id (string) used everywhere as the station key. */
-export interface ChannelRow {
-  id: string;
-  reference: string;
-  title: string;
-  username: string | null;
-  slug: string;
-  started: boolean;
-  telegramLiveEnabled: boolean;
-  liveStatus: LiveStatus;
-  liveError: string | null;
-  /** Manual Telegram live target (URL visible, key never exposed). null = automatic (MTProto). */
-  liveRtmpUrl: string | null;
-  liveRtmpKeySet: boolean;
-  liveTargetRev: number;
-  /** Customer account that owns this station (null = run by the operator). */
-  ownerAccountId: string | null;
-  createdAt: Date;
-}
 
 interface Row {
   telegram_channel_id: string;
@@ -60,7 +39,7 @@ const map = (r: Row): ChannelRow => ({
 });
 
 @Injectable()
-export class ChannelRepository implements ChannelDirectory {
+export class PgChannelRepository implements ChannelDirectory , ChannelRepository{
   constructor(private readonly db: DatabaseService) {}
 
   async list(): Promise<ChannelRow[]> {

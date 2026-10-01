@@ -1,20 +1,7 @@
+import { RadioStateRepository, RadioStateRow } from '../application/ports/radio-state.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 import { RadioStatus } from '../domain/radio.types';
-
-export interface RadioStateRow {
-  status: RadioStatus;
-  statusReason: string | null;
-  currentTrackId: string | null;
-  currentHistoryId: string | null;
-  startedAt: Date | null;
-  nextTrackId: string | null;
-  rotationCursor: number;
-  configurationVersion: number;
-  transitionSeq: number;
-  adId: string | null;
-  adStartedAt: Date | null;
-}
 
 interface Row {
   status: RadioStatus;
@@ -32,7 +19,7 @@ interface Row {
 
 /** Per-station playback state. Every method is scoped by the Telegram channel id. */
 @Injectable()
-export class RadioStateRepository {
+export class PgRadioStateRepository implements RadioStateRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async get(channelId: string): Promise<RadioStateRow> {

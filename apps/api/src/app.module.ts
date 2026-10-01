@@ -14,21 +14,29 @@ import { randomUUID } from 'node:crypto';
 import { HttpAdapterHost } from '@nestjs/core';
 import { REALTIME_BUS, RealtimeBus, RedisRealtimeBus } from './realtime/infrastructure/events';
 import { ListenerCountPublisher } from './realtime/application/listener-count-publisher';
-import { MessagesRepository } from './realtime/infrastructure/messages.repository';
+import { MessagesRepository } from './realtime/application/ports/messages.repository';
+import { PgMessagesRepository } from './realtime/infrastructure/messages.repository';
 import { RealtimeService } from './realtime/interface/realtime.service';
-import { AccountsRepository } from './accounts/infrastructure/accounts.repository';
-import { PlatformSettingsRepository } from './accounts/infrastructure/platform-settings.repository';
-import { AdsRepository } from './engagement/infrastructure/ads.repository';
+import { AccountsRepository } from './accounts/application/ports/accounts.repository';
+import { PgAccountsRepository } from './accounts/infrastructure/accounts.repository';
+import { PlatformSettingsRepository } from './accounts/application/ports/platform-settings.repository';
+import { PgPlatformSettingsRepository } from './accounts/infrastructure/platform-settings.repository';
+import { AdsRepository } from './engagement/application/ports/ads.repository';
+import { PgAdsRepository } from './engagement/infrastructure/ads.repository';
 import { DbAdSource } from './engagement/application/ad-source';
 import { EngagementPublicController } from './engagement/interface/engagement-public.controller';
-import { EngagementSettingsRepository } from './engagement/infrastructure/engagement-settings.repository';
-import { SponsorsRepository } from './engagement/infrastructure/sponsors.repository';
-import { TagPollRepository } from './engagement/infrastructure/tag-poll.repository';
+import { EngagementSettingsRepository } from './engagement/application/ports/engagement-settings.repository';
+import { PgEngagementSettingsRepository } from './engagement/infrastructure/engagement-settings.repository';
+import { SponsorsRepository } from './engagement/application/ports/sponsors.repository';
+import { PgSponsorsRepository } from './engagement/infrastructure/sponsors.repository';
+import { TagPollRepository } from './engagement/application/ports/tag-poll.repository';
+import { PgTagPollRepository } from './engagement/infrastructure/tag-poll.repository';
 import { TagVoteService } from './engagement/application/tag-vote.service';
 import { TagVoteTicker } from './engagement/application/tag-vote-ticker';
 import { AdminModule } from './administration/interface/admin.module';
 import { LyricsAlignmentService } from './lyrics/application/lyrics-alignment.service';
-import { ChannelRepository, ChannelRow } from './catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository, ChannelRow } from './catalog/application/ports/channel.repository';
+import { PgChannelRepository } from './catalog/infrastructure/persistence/channel.repository';
 import { LexiconRepository } from './lyrics/application/lexicon';
 import { LanguageService } from './lyrics/application/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './lyrics/infrastructure/llm-client';
@@ -47,21 +55,25 @@ import { BullMqJobQueue } from './lyrics/infrastructure/bullmq-job-queue';
 import { JOB_QUEUE } from './lyrics/application/ports/job-queues';
 import { JobsRunner } from './lyrics/infrastructure/jobs-runner';
 import { LyricsPipeline } from './lyrics/application/lyrics-pipeline';
-import { LyricsRepository } from './lyrics/infrastructure/lyrics.repository';
+import { LyricsRepository } from './lyrics/application/ports/lyrics.repository';
+import { PgLyricsRepository } from './lyrics/infrastructure/lyrics.repository';
 import { LyricsService } from './lyrics/application/lyrics.service';
 import { TelegraphLyricsSource } from './lyrics/infrastructure/telegraph-lyrics-source';
 import { TrackAudioPipeline } from './radio/application/audio-pipeline';
 import { FfmpegLiveTranscoder } from './radio/infrastructure/ffmpeg-live-transcoder';
 import { PlaybackEngine } from './radio/application/playback-engine';
-import { PlaybackHistoryRepository } from './radio/infrastructure/playback-history.repository';
+import { PlaybackHistoryRepository } from './radio/application/ports/playback-history.repository';
+import { PgPlaybackHistoryRepository } from './radio/infrastructure/playback-history.repository';
 import { PlaybackRunner } from './radio/application/playback-runner';
 import { ListenerSampler } from './radio/application/listener-sampler';
 import { PlaybackSupervisor } from './radio/application/playback-supervisor';
 import { CurrentRadioService } from './radio/application/current-radio.service';
 import { RADIO_BUS, RadioBus, RedisRadioBus } from './radio/infrastructure/radio-bus';
-import { RadioConfigRepository } from './radio/infrastructure/radio-config.repository';
+import { RadioConfigRepository } from './radio/application/ports/radio-config.repository';
+import { PgRadioConfigRepository } from './radio/infrastructure/radio-config.repository';
 import { RadioScheduler } from './radio/application/radio-scheduler';
-import { RadioStateRepository } from './radio/infrastructure/radio-state.repository';
+import { RadioStateRepository } from './radio/application/ports/radio-state.repository';
+import { PgRadioStateRepository } from './radio/infrastructure/radio-state.repository';
 import { Broadcaster } from './radio/domain/broadcaster';
 import { realClock } from './radio/domain/pacer';
 import { MetricsController } from './radio/interface/metrics.controller';
@@ -72,7 +84,8 @@ import { TelegramClientManager } from './catalog/infrastructure/telegram/telegra
 import { TelegramSessionStore } from './catalog/infrastructure/telegram/telegram-session.store';
 import { TELEGRAM_GATEWAY, TelegramGateway } from './catalog/application/ports/telegram.types';
 import { TelegramTrackDiscovery } from './catalog/application/track-discovery';
-import { TrackRepository } from './catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from './catalog/application/ports/track.repository';
+import { PgTrackRepository } from './catalog/infrastructure/persistence/track.repository';
 import { FfmpegPreprocessor } from './lyrics/infrastructure/audio-preprocessor';
 import { TrackTranscriptionService } from './lyrics/application/track-transcription.service';
 
@@ -113,23 +126,23 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
   providers: [
     { provide: APP_CONFIG, useFactory: (): AppConfig => loadConfig() },
     { provide: DatabaseService, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new DatabaseService(c) },
-    { provide: TrackRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new TrackRepository(db) },
-    { provide: LyricsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new LyricsRepository(db) },
-    { provide: RadioConfigRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new RadioConfigRepository(db) },
-    { provide: RadioStateRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new RadioStateRepository(db) },
-    { provide: PlaybackHistoryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PlaybackHistoryRepository(db) },
-    { provide: ChannelRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new ChannelRepository(db) },
+    { provide: TrackRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgTrackRepository(db) },
+    { provide: LyricsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgLyricsRepository(db) },
+    { provide: RadioConfigRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgRadioConfigRepository(db) },
+    { provide: RadioStateRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgRadioStateRepository(db) },
+    { provide: PlaybackHistoryRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgPlaybackHistoryRepository(db) },
+    { provide: ChannelRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgChannelRepository(db) },
     { provide: LexiconRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new LexiconRepository(db) },
 
-    { provide: AdsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AdsRepository(db) },
-    { provide: AccountsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AccountsRepository(db) },
-    { provide: PlatformSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PlatformSettingsRepository(db) },
+    { provide: AdsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAdsRepository(db) },
+    { provide: AccountsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgAccountsRepository(db) },
+    { provide: PlatformSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgPlatformSettingsRepository(db) },
     { provide: PORTAL_AUDIT, inject: [DatabaseService], useFactory: (db: DatabaseService) => new AuditService(db) },
     { provide: PortalAuthService, inject: [AccountsRepository, PlatformSettingsRepository, APP_CONFIG], useFactory: (a: AccountsRepository, p: PlatformSettingsRepository, c: AppConfig) => new PortalAuthService(a, p, { jwtSecret: c.JWT_SECRET, tokenTtlSeconds: 12 * 3600 }) },
     { provide: PortalGuard, inject: [PortalAuthService, AccountsRepository], useFactory: (a: PortalAuthService, acc: AccountsRepository) => new PortalGuard(a, acc) },
-    { provide: SponsorsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new SponsorsRepository(db) },
-    { provide: EngagementSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new EngagementSettingsRepository(db) },
-    { provide: TagPollRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new TagPollRepository(db) },
+    { provide: SponsorsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgSponsorsRepository(db) },
+    { provide: EngagementSettingsRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgEngagementSettingsRepository(db) },
+    { provide: TagPollRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgTagPollRepository(db) },
 
     { provide: SessionCipher, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new SessionCipher(c.TELEGRAM_SESSION_ENCRYPTION_KEY) },
     {
@@ -164,7 +177,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: BullMqJobQueue, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new BullMqJobQueue({ redisUrl: c.REDIS_URL, prefix: c.QUEUE_PREFIX }) },
     { provide: JOB_QUEUE, useExisting: BullMqJobQueue },
     { provide: REALTIME_BUS, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new RedisRealtimeBus(c.REDIS_URL) },
-    { provide: MessagesRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new MessagesRepository(db) },
+    { provide: MessagesRepository, inject: [DatabaseService], useFactory: (db: DatabaseService) => new PgMessagesRepository(db) },
     { provide: RADIO_BUS, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new RedisRadioBus(c.REDIS_URL) },
     { provide: TagVoteService, inject: [EngagementSettingsRepository, TagPollRepository, RADIO_BUS, REALTIME_BUS], useFactory: (s: EngagementSettingsRepository, p: TagPollRepository, b: RadioBus, rt: RealtimeBus) => new TagVoteService(s, p, b, undefined, undefined, rt) },
 

@@ -1,14 +1,14 @@
 import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { PlaybackHistoryRepository } from '../../radio/infrastructure/playback-history.repository';
+import { PlaybackHistoryRepository } from '../../radio/application/ports/playback-history.repository';
 import { StationManager } from '../../radio/application/station-manager';
 import { computePosition } from '../../radio/domain/playback-position';
-import { RadioConfigRepository } from '../../radio/infrastructure/radio-config.repository';
-import { RadioStateRepository } from '../../radio/infrastructure/radio-state.repository';
+import { RadioConfigRepository } from '../../radio/application/ports/radio-config.repository';
+import { RadioStateRepository } from '../../radio/application/ports/radio-state.repository';
 import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
-import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
+import { TrackRepository } from '../../catalog/application/ports/track.repository';
 
 const COUNTS_TTL_MS = 5000;
 type Counts = Record<string, number>;

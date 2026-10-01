@@ -1,12 +1,6 @@
+import { AdminUsersRepository, AdminUser, AdminUserStore } from '../application/ports/admin-users.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-
-export interface AdminUser {
-  id: string;
-  username: string;
-  passwordHash: string;
-  mustChangePassword: boolean;
-}
 
 interface Row {
   id: string;
@@ -16,17 +10,8 @@ interface Row {
 }
 const map = (r: Row): AdminUser => ({ id: r.id, username: r.username, passwordHash: r.password_hash, mustChangePassword: r.must_change_password });
 
-/** The Super Admin accounts. Passwords are stored as scrypt hashes only. */
-export interface AdminUserStore {
-  findByUsername(username: string): Promise<AdminUser | null>;
-  get(id: string): Promise<AdminUser | null>;
-  count(): Promise<number>;
-  create(username: string, passwordHash: string, mustChangePassword: boolean): Promise<AdminUser>;
-  setPassword(id: string, passwordHash: string, mustChangePassword: boolean): Promise<void>;
-}
-
 @Injectable()
-export class AdminUsersRepository implements AdminUserStore {
+export class PgAdminUsersRepository implements AdminUserStore , AdminUsersRepository{
   constructor(private readonly db: DatabaseService) {}
 
   async findByUsername(username: string): Promise<AdminUser | null> {

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { Logger } from '@nestjs/common';
 import { Writable } from 'node:stream';
-import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
+import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { Broadcaster } from '../../radio/domain/broadcaster';
 import { HttpListenerSink } from '../../radio/application/http-listener-sink';
 import { drawtextFilter, NowPlayingOverlay } from '../infrastructure/now-playing-text';

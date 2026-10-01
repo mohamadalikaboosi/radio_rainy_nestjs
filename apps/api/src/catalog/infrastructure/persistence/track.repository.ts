@@ -1,17 +1,9 @@
+import { TrackRepository, UpsertOutcome, UpsertResult } from '../../application/ports/track.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService, Queryable } from '../../../shared/infrastructure/database/database.service';
 import { ParsedCaption } from '../../domain/caption-parser';
 import { TelegramAudioMessage } from '../../application/ports/telegram.types';
 import { LyricsStatus, mapTrack, Track, TRACK_COLUMNS, TrackRow } from '../../domain/track.types';
-
-export type UpsertOutcome = 'created' | 'updated' | 'unchanged' | 'restored';
-
-export interface UpsertResult {
-  trackId: string;
-  outcome: UpsertOutcome;
-  /** true for new tracks with a URL, and when the URL changed: lyrics need (re)fetching. */
-  lyricsNeedsFetch: boolean;
-}
 
 interface ExistingRow {
   id: string;
@@ -26,7 +18,7 @@ interface ExistingRow {
 }
 
 @Injectable()
-export class TrackRepository {
+export class PgTrackRepository implements TrackRepository {
   constructor(private readonly db: DatabaseService) {}
 
   /** Idempotent: the (channel, message) unique key guarantees a single row however often sync runs. */

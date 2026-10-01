@@ -1,24 +1,8 @@
+import { MessagesRepository, LiveMessage, MessageInput } from '../application/ports/messages.repository';
 import { Injectable } from '@nestjs/common';
-import { z } from 'zod';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
 
-export interface LiveMessage {
-  id: string;
-  channelId: string;
-  text: string;
-  level: 'INFO' | 'WARN';
-  createdBy: string;
-  createdAt: string;
-  expiresAt: string;
-}
 
-export const messageSchema = z.object({
-  text: z.string().trim().min(1).max(500),
-  level: z.enum(['INFO', 'WARN']).default('INFO'),
-  /** How long listeners see it. */
-  minutes: z.number().int().min(1).max(1440).default(10),
-});
-export type MessageInput = z.infer<typeof messageSchema>;
 
 interface Row {
   id: string;
@@ -32,7 +16,7 @@ interface Row {
 const map = (r: Row): LiveMessage => ({ id: r.id, channelId: r.channel_id, text: r.text, level: r.level, createdBy: r.created_by, createdAt: r.created_at.toISOString(), expiresAt: r.expires_at.toISOString() });
 
 @Injectable()
-export class MessagesRepository {
+export class PgMessagesRepository implements MessagesRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async create(channelId: string, input: MessageInput, by: string): Promise<LiveMessage> {
