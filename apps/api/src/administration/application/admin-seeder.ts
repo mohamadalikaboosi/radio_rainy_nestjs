@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { AdminUserStore } from '../infrastructure/admin-users.repository';
 import { DEFAULT_PASSWORD, DEFAULT_USERNAME } from './admin-auth.service';
-import { hashPassword } from '../../shared/infrastructure/crypto/password';
+import { hashPassword } from '../../shared/kernel/password';
 
 /**
  * Creates the first Super Admin when there is none.

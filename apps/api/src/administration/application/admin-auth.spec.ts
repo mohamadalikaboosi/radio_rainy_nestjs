@@ -4,7 +4,7 @@ import { AdminUser, AdminUserStore } from '../infrastructure/admin-users.reposit
 import { AdminAuthService, passwordPolicy } from './admin-auth.service';
 import { resetAdminPassword, seedAdmin } from './admin-seeder';
 import { scrub } from './audit.service';
-import { hashPassword, verifyPassword } from '../../shared/infrastructure/crypto/password';
+import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 
 class MemoryUsers implements AdminUserStore {
   users: AdminUser[] = [];

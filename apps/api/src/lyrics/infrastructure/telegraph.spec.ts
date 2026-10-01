@@ -1,6 +1,6 @@
 import { LyricsError } from '../domain/lyrics.errors';
 import { FetchFn, TelegraphLyricsSource, telegraphPathFromUrl } from './telegraph-lyrics-source';
-import { htmlToText, nodesToText } from '../domain/telegraph-parser';
+import { htmlToText, nodesToText } from './telegraph-parser';
 
 const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) });
 const html = (body: string, status = 200) => ({ ok: status < 400, status, json: async () => ({}), text: async () => body });

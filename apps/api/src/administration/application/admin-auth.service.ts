@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inj
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { sign, verify } from 'jsonwebtoken';
 import { AdminUser, AdminUserStore } from '../infrastructure/admin-users.repository';
-import { hashPassword, verifyPassword } from '../../shared/infrastructure/crypto/password';
+import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 
 export interface AdminIdentity {
   /** The username (kept under this name because the audit log and controllers already use `admin.email` as the actor). */

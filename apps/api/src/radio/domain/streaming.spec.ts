@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 import { Broadcaster } from './broadcaster';
-import { HttpListenerSink } from '../infrastructure/http-listener-sink';
+import { HttpListenerSink } from '../application/http-listener-sink';
 import { stripId3v2 } from './id3';
 import { pace } from './pacer';
 

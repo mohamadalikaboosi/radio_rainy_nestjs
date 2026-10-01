@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Writable } from 'node:stream';
 import { ChannelRepository } from '../../catalog/infrastructure/persistence/channel.repository';
 import { Broadcaster } from '../../radio/domain/broadcaster';
-import { HttpListenerSink } from '../../radio/infrastructure/http-listener-sink';
+import { HttpListenerSink } from '../../radio/application/http-listener-sink';
 import { drawtextFilter, NowPlayingOverlay } from '../infrastructure/now-playing-text';
 
 /** RTMP ingest of a Telegram channel's live stream (the "Stream with..." feature of Telegram voice chats). */

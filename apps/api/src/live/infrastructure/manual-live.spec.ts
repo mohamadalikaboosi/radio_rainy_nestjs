@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseLiveTarget } from '../../catalog/application/channel.service';
-import { SessionCipher } from '../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { ManualOrAutoLiveApi } from './manual-live-api';
 import { buildFfmpegRtmpArgs, TelegramLiveApi } from '../application/telegram-live-streamer';
 

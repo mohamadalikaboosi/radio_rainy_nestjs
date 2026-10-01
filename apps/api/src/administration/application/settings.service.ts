@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { SessionCipher } from '../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../shared/kernel/session-cipher';
 
 // ---- section schemas (what the admin panel may set) ----
 export const telegramSettingsSchema = z.object({

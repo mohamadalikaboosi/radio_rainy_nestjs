@@ -4,7 +4,7 @@ import { AuditService } from '../../administration/application/audit.service';
 import { RadioBus } from '../../radio/infrastructure/radio-bus';
 import { ActorContext } from '../../radio/application/radio-configuration.service';
 import { TelegramGateway, TelegramNotReadyError } from './ports/telegram.types';
-import { SessionCipher } from '../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { ChannelRepository, ChannelRow } from '../infrastructure/persistence/channel.repository';
 
 export const addChannelSchema = z.object({ reference: z.string().trim().min(2).max(200) });

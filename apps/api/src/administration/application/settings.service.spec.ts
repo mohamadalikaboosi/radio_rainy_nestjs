@@ -1,6 +1,6 @@
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { SessionCipher } from '../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { SettingsService } from './settings.service';
 
 const KEY = 'ab'.repeat(32);

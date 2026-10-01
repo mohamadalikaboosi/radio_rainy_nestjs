@@ -4,7 +4,7 @@ import { ChannelRepository, ChannelRow } from '../../catalog/infrastructure/pers
 import { listenersOf, StationManager } from '../application/station-manager';
 import { EngagementSettingsRepository } from '../../engagement/infrastructure/engagement-settings.repository';
 import { CurrentRadioService } from '../application/current-radio.service';
-import { HttpListenerSink } from '../infrastructure/http-listener-sink';
+import { HttpListenerSink } from '../application/http-listener-sink';
 
 export const STREAM_OPTIONS = Symbol('STREAM_OPTIONS');
 export interface StreamOptions {

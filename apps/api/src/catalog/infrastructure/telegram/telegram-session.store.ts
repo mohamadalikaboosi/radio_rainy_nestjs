@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.service';
-import { SessionCipher } from '../../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../../shared/kernel/session-cipher';
 
 export interface StoredSessionInfo {
   accountLabel: string | null;

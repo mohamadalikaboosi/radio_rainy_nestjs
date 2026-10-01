@@ -15,7 +15,7 @@ import { RadioStateRepository } from '../../radio/infrastructure/radio-state.rep
 import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
 import { TrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
-import { SessionCipher } from '../../shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from '../../shared/kernel/session-cipher';
 import { AdminAuthService } from '../application/admin-auth.service';
 import { AdminGuard } from './admin.guard';
 import { AdminUsersRepository } from '../infrastructure/admin-users.repository';

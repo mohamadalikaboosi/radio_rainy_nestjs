@@ -67,7 +67,7 @@ import { realClock } from './radio/domain/pacer';
 import { MetricsController } from './radio/interface/metrics.controller';
 import { RadioController, STREAM_OPTIONS } from './radio/interface/radio.controller';
 import { GramJsTelegramGateway } from './catalog/infrastructure/telegram/gramjs.gateway';
-import { SessionCipher } from './shared/infrastructure/crypto/session-cipher';
+import { SessionCipher } from './shared/kernel/session-cipher';
 import { TelegramClientManager } from './catalog/infrastructure/telegram/telegram-client.manager';
 import { TelegramSessionStore } from './catalog/infrastructure/telegram/telegram-session.store';
 import { TELEGRAM_GATEWAY, TelegramGateway } from './catalog/application/ports/telegram.types';

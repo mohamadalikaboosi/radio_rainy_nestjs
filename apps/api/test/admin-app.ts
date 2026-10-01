@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
-import { hashPassword } from '../src/shared/infrastructure/crypto/password';
+import { hashPassword } from '../src/shared/kernel/password';
 import { JobsRunner } from '../src/lyrics/infrastructure/jobs-runner';
 import { TelegramClientManager } from '../src/catalog/infrastructure/telegram/telegram-client.manager';
 import { GramJsLiveApi } from '../src/live/infrastructure/gramjs-live-api';

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LyricsError } from '../domain/lyrics.errors';
 import { LyricsSource } from '../application/ports/lyrics-source';
-import { htmlToText, nodesToText, TgNode } from '../domain/telegraph-parser';
+import { htmlToText, nodesToText, TgNode } from './telegraph-parser';
 
 const ALLOWED_HOSTS = new Set(['telegra.ph', 'te.legra.ph', 'graph.org']);
 

@@ -1,7 +1,7 @@
 import { ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { sign, verify } from 'jsonwebtoken';
 import { z } from 'zod';
-import { hashPassword, verifyPassword } from '../../shared/infrastructure/crypto/password';
+import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 import { AccountsRepository, EmailTakenError } from '../infrastructure/accounts.repository';
 import { PlatformSettingsRepository } from '../infrastructure/platform-settings.repository';
 
