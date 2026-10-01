@@ -167,27 +167,24 @@ Audio needed for Whisper is streamed to a temp file, processed, deleted.
 
 ## C. Module structure
 
+The API is organised as **bounded contexts, each split into hexagonal layers** — see [ARCHITECTURE.md](ARCHITECTURE.md) for the full map,
+the dependency rules (enforced by `src/architecture.spec.ts`) and how to add a feature.
+
 ```
 apps/api/src/
-  config/          zod-validated env (fails on boot), typed ConfigService
-  database/        PrismaService, transactions helper, advisory-lock helper
-  telegram/        TelegramClient(+Factory), FloodWaitHandler, CaptionParser, HashtagExtractor,
-                   TelegramTrackDiscovery, TelegramMediaSource
-  track/           TrackService, TrackRepository, HashtagService
-  lyrics/          LyricsService, LyricsSource (iface), TelegraphLyricsSource, TelegraphHtmlParser, LyricsRepository
-  transcription/   TranscriptionProvider (iface), WhisperTranscriptionProvider, AudioPreprocessor(ffmpeg)
-  alignment/       LyricsAlignmentService, normalize.ts, similarity.ts, dpAligner.ts   (pure, no I/O)
-  radio/           RadioScheduler, RadioRuleEngine (pure), TrackSelectionStrategy(s), RadioConfigurationService,
-                   RadioStateService, RecentTracks, WeightedRandom, SeededRng
-  playback/        PlaybackEngine (state machine), PlaybackHistoryService, AudioSource (iface)
-  streaming/       AudioStreamService, Broadcaster, Pacer, RadioController(stream/current/lyrics)
-  jobs/            queues, processors: telegram-sync, lyrics-fetch, audio-transcription, lyrics-alignment
-  admin/           AdminAuthModule (JWT, RolesGuard), AdminControllers, AuditService, StatsService
-  common/          logging, request-id, error types, redaction
-apps/admin/        React SPA (Dashboard, Radio{Config,Rules,Preview,History}, Tracks, Hashtags, Lyrics, Audit)
+  <context>/{domain,application,infrastructure,interface}
+     catalog        tracks, channels, Telegram sync, audio storage/cache
+     radio          scheduling, playback engine, shared stream, metrics
+     lyrics         lyrics, transcription (Whisper), alignment, language learning, job queues
+     engagement     ads, sponsors, tag vote, engagement settings
+     accounts       advertiser / station-owner portal, billing switch
+     administration Super Admin auth, dashboard, reports, settings, audit
+     live           Telegram live stream (RTMP)
+     realtime       WebSocket control channel, announcements
+  shared/{kernel,infrastructure,interface}
+  app.module.ts · admin.module.ts · main.ts      composition root
+apps/admin/        React SPA (panel, public player, /partner portal)
 ```
-
-Rule: no service > ~300 lines; `alignment/` and `radio/RadioRuleEngine` have **zero** framework/I-O deps.
 
 ## D. Core interfaces
 
@@ -349,7 +346,7 @@ Logging: pino, JSON, request/job ids, redaction of `TELEGRAM_API_HASH`, `TELEGRA
 
 The design above was approved with the following answers and then implemented; where the code differs from the text above, the code wins:
 
-* **DB access**: plain `pg` + SQL migrations (`apps/api/src/database/migrations.ts`) instead of Prisma — direct control of `FOR UPDATE`, advisory locks and partial indexes, and no engine download step.
+* **DB access**: plain `pg` + SQL migrations (`apps/api/src/shared/infrastructure/database/migrations.ts`) instead of Prisma — direct control of `FOR UPDATE`, advisory locks and partial indexes, and no engine download step.
 * **Codec/latency**: MP3 is passed through (ID3 stripped, bitrate measured from size/duration); everything else is transcoded by ffmpeg to MP3 128k. Defaults tuned for low latency (2 s burst, 4 KiB slices, 128 KiB Telegram chunks, next-track prefetch, continuous pacing timeline).
 * **Whisper**: optional (`WHISPER_URL` unset ⇒ feature off, no errors). OpenAI-compatible `/v1/audio/transcriptions`.
 * **Infra**: Postgres + Redis; Redis is also used for pub/sub of admin commands to the leader.
