@@ -29,12 +29,12 @@ export function buildFfmpegRtmpArgs(target: RtmpTarget, audioBitrateKbps = 128):
   const base = target.url.endsWith('/') ? target.url : `${target.url}/`;
   return [
     '-nostdin', '-loglevel', 'warning',
-    '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=640x360:r=10', // Telegram requires a video track: a static dark frame
+    '-re', '-f', 'lavfi', '-i', 'color=c=0x0f1216:s=640x360:r=10', // Telegram requires a video track: a static dark frame
     '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', '20', '-b:v', '150k',
     '-c:a', 'aac', '-b:a', `${audioBitrateKbps}k`, '-ar', '48000', '-ac', '2',
-    '-f', 'flv', `${base}${target.key}`,
+    '-flvflags', 'no_duration_filesize', '-f', 'flv', `${base}${target.key}`,
   ];
 }
 
