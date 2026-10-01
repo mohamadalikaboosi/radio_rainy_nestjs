@@ -1,6 +1,6 @@
-import { AdminUsersRepository } from '../admin/admin-users.repository';
-import { resetAdminPassword } from '../admin/admin-seeder';
-import { DatabaseService } from '../database/database.service';
+import { AdminUsersRepository } from '../administration/infrastructure/admin-users.repository';
+import { resetAdminPassword } from '../administration/application/admin-seeder';
+import { DatabaseService } from '../shared/infrastructure/database/database.service';
 
 /**
  * Forgot the Super Admin password?

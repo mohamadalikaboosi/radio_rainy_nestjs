@@ -1,4 +1,4 @@
-import { FetchAudioOptions, TelegramAudioMessage, TelegramChannelInfo, TelegramGateway, TelegramNotReadyError } from '../src/telegram/telegram.types';
+import { FetchAudioOptions, TelegramAudioMessage, TelegramChannelInfo, TelegramGateway, TelegramNotReadyError } from '../src/catalog/application/ports/telegram.types';
 
 export function audioMsg(messageId: number, caption: string, over: Partial<TelegramAudioMessage['audio']> = {}, channelId = '1001'): TelegramAudioMessage {
   return {

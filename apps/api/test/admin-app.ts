@@ -1,11 +1,11 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
-import { hashPassword } from '../src/admin/password';
-import { JobsRunner } from '../src/jobs/jobs-runner';
-import { TelegramClientManager } from '../src/telegram/telegram-client.manager';
-import { GramJsLiveApi } from '../src/live/gramjs-live-api';
-import { TELEGRAM_GATEWAY, TelegramNotReadyError } from '../src/telegram/telegram.types';
+import { hashPassword } from '../src/shared/infrastructure/crypto/password';
+import { JobsRunner } from '../src/lyrics/infrastructure/jobs-runner';
+import { TelegramClientManager } from '../src/catalog/infrastructure/telegram/telegram-client.manager';
+import { GramJsLiveApi } from '../src/live/infrastructure/gramjs-live-api';
+import { TELEGRAM_GATEWAY, TelegramNotReadyError } from '../src/catalog/application/ports/telegram.types';
 import { FakeTelegramGateway } from './fake-telegram';
 import { freshDb, TEST_DATABASE_URL, TEST_REDIS_URL } from './test-db';
 

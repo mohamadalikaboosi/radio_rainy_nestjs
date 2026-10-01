@@ -10,20 +10,20 @@ import { buildHarness, Harness, waitFor } from '../test/engine-harness';
 import { InlineQueue } from '../test/inline-queue';
 import { createRadioApp } from '../test/radio-app';
 import { freshDb } from '../test/test-db';
-import { LyricsAlignmentService } from './alignment/lyrics-alignment.service';
-import { LexiconRepository } from './language/lexicon';
-import { DatabaseService } from './database/database.service';
-import { LyricsPipeline } from './jobs/lyrics-pipeline';
-import { LyricsError } from './lyrics/lyrics.errors';
-import { LyricsRepository } from './lyrics/lyrics.repository';
-import { LyricsService } from './lyrics/lyrics.service';
-import { LyricsSource } from './lyrics/lyrics-source';
-import { TelegramTrackDiscovery } from './telegram/track-discovery';
-import { TrackRepository } from './track/track.repository';
-import { AudioPreprocessor } from './transcription/audio-preprocessor';
-import { TrackTranscriptionService } from './transcription/track-transcription.service';
-import { TranscriptionError } from './transcription/transcription.errors';
-import { AudioInput, Transcript, TranscriptionProvider } from './transcription/transcription.types';
+import { LyricsAlignmentService } from './lyrics/application/lyrics-alignment.service';
+import { LexiconRepository } from './lyrics/application/lexicon';
+import { DatabaseService } from './shared/infrastructure/database/database.service';
+import { LyricsPipeline } from './lyrics/application/lyrics-pipeline';
+import { LyricsError } from './lyrics/domain/lyrics.errors';
+import { LyricsRepository } from './lyrics/infrastructure/lyrics.repository';
+import { LyricsService } from './lyrics/application/lyrics.service';
+import { LyricsSource } from './lyrics/application/ports/lyrics-source';
+import { TelegramTrackDiscovery } from './catalog/application/track-discovery';
+import { TrackRepository } from './catalog/infrastructure/persistence/track.repository';
+import { AudioPreprocessor } from './lyrics/infrastructure/audio-preprocessor';
+import { TrackTranscriptionService } from './lyrics/application/track-transcription.service';
+import { TranscriptionError } from './lyrics/domain/transcription.errors';
+import { AudioInput, Transcript, TranscriptionProvider } from './lyrics/domain/transcription.types';
 
 /** 2-second tracks: 40000 bytes at 20000 B/s. Byte value = message id. */
 const SONGS = {

@@ -1,4 +1,4 @@
-import { hashPassword } from '../admin/password';
+import { hashPassword } from '../shared/infrastructure/crypto/password';
 
 const pw = process.argv[2];
 if (!pw) {

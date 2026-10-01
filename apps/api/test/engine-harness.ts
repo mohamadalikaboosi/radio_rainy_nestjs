@@ -1,14 +1,14 @@
-import { DatabaseService } from '../src/database/database.service';
-import { TrackAudioPipeline } from '../src/playback/audio-pipeline';
-import { StationMetrics } from '../src/metrics/radio-metrics';
-import { AdSource, EngineOptions, PlaybackEngine } from '../src/playback/playback-engine';
-import { PlaybackHistoryRepository } from '../src/playback/playback-history.repository';
-import { RadioConfigRepository } from '../src/radio/radio-config.repository';
-import { RadioScheduler } from '../src/radio/radio-scheduler';
-import { RadioStateRepository } from '../src/radio/radio-state.repository';
-import { seededRng } from '../src/radio/rng';
-import { Broadcaster } from '../src/streaming/broadcaster';
-import { TrackRepository } from '../src/track/track.repository';
+import { DatabaseService } from '../src/shared/infrastructure/database/database.service';
+import { TrackAudioPipeline } from '../src/radio/application/audio-pipeline';
+import { StationMetrics } from '../src/radio/application/radio-metrics';
+import { AdSource, EngineOptions, PlaybackEngine } from '../src/radio/application/playback-engine';
+import { PlaybackHistoryRepository } from '../src/radio/infrastructure/playback-history.repository';
+import { RadioConfigRepository } from '../src/radio/infrastructure/radio-config.repository';
+import { RadioScheduler } from '../src/radio/application/radio-scheduler';
+import { RadioStateRepository } from '../src/radio/infrastructure/radio-state.repository';
+import { seededRng } from '../src/radio/domain/rng';
+import { Broadcaster } from '../src/radio/domain/broadcaster';
+import { TrackRepository } from '../src/catalog/infrastructure/persistence/track.repository';
 import { FakeTelegramGateway } from './fake-telegram';
 
 /** Time-warp clock: pacing sleeps advance virtual time instantly, so a 3-minute track plays in milliseconds. */

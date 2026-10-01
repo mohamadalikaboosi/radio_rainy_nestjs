@@ -1,5 +1,5 @@
-import { JobQueue, LyricsJobPayload } from '../src/jobs/job-queues';
-import { LyricsPipeline } from '../src/jobs/lyrics-pipeline';
+import { JobQueue, LyricsJobPayload } from '../src/lyrics/application/ports/job-queues';
+import { LyricsPipeline } from '../src/lyrics/application/lyrics-pipeline';
 
 interface Job {
   stage: 'fetch' | 'transcribe' | 'align' | 'sync';

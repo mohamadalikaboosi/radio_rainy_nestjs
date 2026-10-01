@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "start:dev": "ts-node-dev --respawn src/main.ts",
-    "migrate": "ts-node src/database/migrate-cli.ts",
+    "migrate": "ts-node src/shared/infrastructure/database/migrate-cli.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest --runInBand",

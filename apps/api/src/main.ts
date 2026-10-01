@@ -6,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
-import { ConfigError, loadConfig, redactConfig } from './config/app-config';
+import { ConfigError, loadConfig, redactConfig } from './shared/infrastructure/config/app-config';
 
 const API_PREFIXES = ['/admin', '/radio', '/portal', '/metrics'];
 
