@@ -1,7 +1,8 @@
 import { freshDb } from '../../../../test/test-db';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.service';
 import { SessionCipher } from '../../../shared/kernel/session-cipher';
-import { maskPhone, TelegramSessionStore } from './telegram-session.store';
+import { maskPhone } from '../../domain/phone';
+import { TelegramSessionStore } from './telegram-session.store';
 
 const KEY = 'ab'.repeat(32);
 

@@ -1,3 +1,5 @@
+import { TelegramConnection } from '../../application/ports/telegram-connection';
+import { TelegramAuthState, TelegramStatus } from '../../application/ports/telegram-connection';
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { Api, TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
@@ -5,24 +7,9 @@ import { APP_CONFIG, AppConfig } from '../../../shared/infrastructure/config/app
 import { SettingsService, TelegramCredentials } from '../../../administration/application/settings.service';
 import { withTimeout } from '../../../shared/kernel/timeout';
 import { withFloodWait } from '../../application/flood-wait';
-import { maskPhone, TelegramSessionStore } from './telegram-session.store';
+import { maskPhone } from '../../domain/phone';
+import { TelegramSessionStore } from './telegram-session.store';
 import { TelegramNotReadyError } from '../../application/ports/telegram.types';
-
-export type TelegramAuthState =
-  | 'NOT_CONFIGURED'
-  | 'NOT_LOGGED_IN'
-  | 'CONNECTING'
-  | 'AWAITING_CODE'
-  | 'AWAITING_PASSWORD'
-  | 'READY'
-  | 'DISCONNECTED'
-  | 'ERROR';
-
-export interface TelegramStatus {
-  state: TelegramAuthState;
-  accountLabel: string | null;
-  error?: string;
-}
 
 interface PendingLogin {
   client: TelegramClient;
@@ -38,7 +25,7 @@ const LOGIN_STEP_TIMEOUT_MS = 30_000;
 
 /** Owns the MTProto client: session load, reconnect supervision and the interactive (admin panel) login flow. */
 @Injectable()
-export class TelegramClientManager implements OnApplicationBootstrap, OnModuleDestroy {
+export class TelegramClientManager implements TelegramConnection, OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(TelegramClientManager.name);
   private client: TelegramClient | null = null;
   private state: TelegramAuthState = 'NOT_CONFIGURED';

@@ -1,13 +1,13 @@
-import { BadRequestException, Body, GatewayTimeoutException, Res, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, GatewayTimeoutException, Res, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Patch, Query, Req, UseGuards, Inject } from '@nestjs/common';
 import { z } from 'zod';
 import { TimeoutError } from '../../shared/kernel/timeout';
 import { ZodPipe } from '../../shared/interface/zod.pipe';
-import { BullMqJobQueue } from '../../lyrics/infrastructure/bullmq-job-queue';
+import { JOB_QUEUE, JobQueue } from '../../lyrics/application/ports/job-queues';
 import { addChannelSchema, ChannelService } from '../../catalog/application/channel.service';
 import { StationManager } from '../../radio/application/station-manager';
 import { ActorContext, ConfigUpdate, configUpdateSchema, PreviewRequest, previewSchema, RadioConfigurationService, RuleInput, ruleSchema } from '../../radio/application/radio-configuration.service';
-import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
-import { maskPhone } from '../../catalog/infrastructure/telegram/telegram-session.store';
+import { TelegramConnection } from '../../catalog/application/ports/telegram-connection';
+import { maskPhone } from '../../catalog/domain/phone';
 import { AdminAuthService } from '../application/admin-auth.service';
 import type { Response } from 'express';
 import { LiveService } from '../application/live.service';
@@ -74,9 +74,9 @@ export class AdminDashboardController {
 @UseGuards(AdminGuard)
 export class AdminTelegramController {
   constructor(
-    private readonly telegram: TelegramClientManager,
+    private readonly telegram: TelegramConnection,
     private readonly audit: AuditService,
-    private readonly queue: BullMqJobQueue,
+    @Inject(JOB_QUEUE) private readonly queue: JobQueue,
   ) {}
 
   @Get('telegram/status')
@@ -300,7 +300,7 @@ export class AdminRadioController {
 @Controller('admin/channels')
 @UseGuards(AdminGuard)
 export class AdminChannelsController {
-  constructor(private readonly channels: ChannelService, private readonly queue: BullMqJobQueue, private readonly audit: AuditService) {}
+  constructor(private readonly channels: ChannelService, @Inject(JOB_QUEUE) private readonly queue: JobQueue, private readonly audit: AuditService) {}
 
   @Get()
   list() {

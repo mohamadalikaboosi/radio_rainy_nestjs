@@ -2,11 +2,11 @@ import { listenersOf } from '../../radio/application/station-manager';
 import { Injectable } from '@nestjs/common';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { BullMqJobQueue } from '../../lyrics/infrastructure/bullmq-job-queue';
+import { JobQueue } from '../../lyrics/application/ports/job-queues';
 import { StationManager } from '../../radio/application/station-manager';
 import { SettingsService } from './settings.service';
 import { AudioStoreSource } from '../../catalog/application/ports/audio-store';
-import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
+import { TelegramConnection } from '../../catalog/application/ports/telegram-connection';
 
 const CACHE_MS = 30_000;
 
@@ -17,8 +17,8 @@ export class SystemReportService {
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly queue: BullMqJobQueue,
-    private readonly telegram: TelegramClientManager,
+    private readonly queue: Pick<JobQueue, 'counts'>,
+    private readonly telegram: TelegramConnection,
     private readonly stations: StationManager,
     private readonly channels: ChannelRepository,
     private readonly settings: SettingsService,

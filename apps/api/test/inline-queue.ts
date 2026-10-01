@@ -1,4 +1,4 @@
-import { JobQueue, LyricsJobPayload } from '../src/lyrics/application/ports/job-queues';
+import { JobQueue, LyricsJobPayload, QueueName } from '../src/lyrics/application/ports/job-queues';
 import { LyricsPipeline } from '../src/lyrics/application/lyrics-pipeline';
 
 interface Job {
@@ -8,6 +8,10 @@ interface Job {
 
 /** Runs jobs in-process, in order, with the same attempt semantics as the real queue (retries + isLastAttempt). */
 export class InlineQueue implements JobQueue {
+  async counts(): Promise<Record<QueueName, Record<string, number>>> {
+    return { 'telegram-sync': {}, 'lyrics-fetch': {}, 'audio-transcription': {}, 'lyrics-alignment': {} };
+  }
+
   jobs: Job[] = [];
   history: string[] = [];
   pipeline!: LyricsPipeline;

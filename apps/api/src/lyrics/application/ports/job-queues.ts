@@ -27,6 +27,8 @@ export interface JobQueue {
   enqueueTranscription(payload: LyricsJobPayload): Promise<void>;
   enqueueAlignment(payload: LyricsJobPayload & { transcriptId: string }): Promise<void>;
   enqueueTelegramSync(payload: SyncJobPayload): Promise<void>;
+  /** Jobs per state for each queue (admin dashboard). */
+  counts(): Promise<Record<QueueName, Record<string, number>>>;
 }
 
 export const JOB_QUEUE = Symbol('JOB_QUEUE');

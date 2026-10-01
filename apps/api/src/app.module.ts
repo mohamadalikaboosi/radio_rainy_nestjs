@@ -34,7 +34,7 @@ import { TagPollRepository } from './engagement/application/ports/tag-poll.repos
 import { PgTagPollRepository } from './engagement/infrastructure/tag-poll.repository';
 import { TagVoteService } from './engagement/application/tag-vote.service';
 import { TagVoteTicker } from './engagement/application/tag-vote-ticker';
-import { AdminModule } from './administration/interface/admin.module';
+import { AdminModule } from './admin.module';
 import { LyricsAlignmentService } from './lyrics/application/lyrics-alignment.service';
 import { ChannelRepository, ChannelRow } from './catalog/application/ports/channel.repository';
 import { PgChannelRepository } from './catalog/infrastructure/persistence/channel.repository';
@@ -82,6 +82,7 @@ import { MetricsController } from './radio/interface/metrics.controller';
 import { RadioController, STREAM_OPTIONS } from './radio/interface/radio.controller';
 import { GramJsTelegramGateway } from './catalog/infrastructure/telegram/gramjs.gateway';
 import { SessionCipher } from './shared/kernel/session-cipher';
+import { TelegramConnection } from './catalog/application/ports/telegram-connection';
 import { TelegramClientManager } from './catalog/infrastructure/telegram/telegram-client.manager';
 import { TelegramSessionStore } from './catalog/infrastructure/telegram/telegram-session.store';
 import { TELEGRAM_GATEWAY, TelegramGateway } from './catalog/application/ports/telegram.types';
@@ -159,6 +160,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     },
     { provide: TelegramSessionStore, inject: [DatabaseService, SessionCipher], useFactory: (db: DatabaseService, c: SessionCipher) => new TelegramSessionStore(db, c) },
     { provide: TelegramClientManager, inject: [APP_CONFIG, TelegramSessionStore, SettingsService], useFactory: (c: AppConfig, s: TelegramSessionStore, st: SettingsService) => new TelegramClientManager(c, s, st) },
+    { provide: TelegramConnection, useExisting: TelegramClientManager },
     { provide: GramJsTelegramGateway, inject: [TelegramClientManager, ChannelRepository, APP_CONFIG], useFactory: (m: TelegramClientManager, ch: ChannelRepository, c: AppConfig) => new GramJsTelegramGateway(m, ch, c.TELEGRAM_DOWNLOAD_REQUEST_KB) },
     { provide: RadioMetrics, useFactory: () => new RadioMetrics() },
     { provide: DiskAudioCache, inject: [APP_CONFIG, RadioMetrics], useFactory: (c: AppConfig, m: RadioMetrics) => new DiskAudioCache({ dir: c.AUDIO_CACHE_DIR ?? join(c.TMP_DIR, 'audio-cache'), maxBytes: c.AUDIO_CACHE_MAX_MB * 1024 * 1024, maxConcurrentFills: c.AUDIO_CACHE_CONCURRENT_FILLS }, m.cache) },
@@ -284,6 +286,6 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: 'REALTIME_LIFECYCLE', inject: [RealtimeService, HttpAdapterHost, REALTIME_BUS], useFactory: (r: RealtimeService, h: HttpAdapterHost, b: RealtimeBus) => new RealtimeLifecycle(r, h, b) },
     { provide: STREAM_OPTIONS, useValue: { maxBacklogBytes: 512 * 1024, stationName: 'radio_rainy' } },
   ],
-  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TELEGRAM_GATEWAY, 'AUDIO_STORE_SOURCE', TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, CurrentRadioService, TelegramSessionStore, LanguageService, AdsRepository, SponsorsRepository, EngagementSettingsRepository, TagPollRepository, TagVoteService, RadioMetrics, AccountsRepository, PlatformSettingsRepository, REALTIME_BUS, MessagesRepository, RealtimeService],
+  exports: [APP_CONFIG, DatabaseService, TrackRepository, LyricsRepository, RadioConfigRepository, RadioStateRepository, PlaybackHistoryRepository, ChannelRepository, LexiconRepository, SettingsService, TelegramClientManager, TelegramConnection, TELEGRAM_GATEWAY, 'AUDIO_STORE_SOURCE', TelegramTrackDiscovery, LyricsPipeline, StationManager, RADIO_BUS, BullMqJobQueue, JOB_QUEUE, CurrentRadioService, TelegramSessionStore, LanguageService, AdsRepository, SponsorsRepository, EngagementSettingsRepository, TagPollRepository, TagVoteService, RadioMetrics, AccountsRepository, PlatformSettingsRepository, REALTIME_BUS, MessagesRepository, RealtimeService],
 })
 export class AppModule {}

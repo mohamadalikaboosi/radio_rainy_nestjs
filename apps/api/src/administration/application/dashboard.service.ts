@@ -7,7 +7,7 @@ import { StationManager } from '../../radio/application/station-manager';
 import { computePosition } from '../../radio/domain/playback-position';
 import { RadioConfigRepository } from '../../radio/application/ports/radio-config.repository';
 import { RadioStateRepository } from '../../radio/application/ports/radio-state.repository';
-import { TelegramClientManager } from '../../catalog/infrastructure/telegram/telegram-client.manager';
+import { TelegramConnection } from '../../catalog/application/ports/telegram-connection';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';
 
 const COUNTS_TTL_MS = 5000;
@@ -25,7 +25,7 @@ export class DashboardService {
     private readonly history: PlaybackHistoryRepository,
     private readonly stations: StationManager,
     private readonly channels: ChannelRepository,
-    private readonly telegram: TelegramClientManager,
+    private readonly telegram: TelegramConnection,
   ) {}
 
   private loadCounts(channelId: string | null): Promise<Counts> {
