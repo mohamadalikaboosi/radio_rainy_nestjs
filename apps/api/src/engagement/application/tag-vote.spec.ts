@@ -1,6 +1,6 @@
 import { freshDb } from '../../../test/test-db';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
-import { RadioCommand } from '../../radio/infrastructure/radio-bus';
+import { RadioCommand } from '../../radio/application/ports/radio-bus';
 import { PgRadioConfigRepository } from '../../radio/infrastructure/radio-config.repository';
 import { RadioScheduler } from '../../radio/application/radio-scheduler';
 import { PgRadioStateRepository } from '../../radio/infrastructure/radio-state.repository';

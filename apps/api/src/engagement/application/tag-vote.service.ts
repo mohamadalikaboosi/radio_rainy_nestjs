@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { RadioBus } from '../../radio/infrastructure/radio-bus';
+import { RadioBus } from '../../radio/application/ports/radio-bus';
 import { Rng, cryptoRng } from '../../radio/domain/rng';
 import { EngagementSettingsRepository } from './ports/engagement-settings.repository';
 import { TagPoll, TagPollRepository } from './ports/tag-poll.repository';

@@ -7,7 +7,7 @@ import { AdsRepository } from '../application/ports/ads.repository';
 import { PlatformSettingsRepository } from '../../accounts/application/ports/platform-settings.repository';
 import { SponsorsRepository } from '../application/ports/sponsors.repository';
 import { TagVoteService, VoteView } from '../application/tag-vote.service';
-import { VoteLimitError } from '../infrastructure/tag-poll.repository';
+import { VoteLimitError } from '../application/ports/tag-poll.repository';
 
 const voteBody = z.object({ voterId: z.string().min(8).max(64), hashtag: z.string().min(1).max(64) });
 

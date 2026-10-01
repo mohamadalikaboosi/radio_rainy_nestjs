@@ -26,3 +26,5 @@ export abstract class TagPollRepository {
   abstract candidateTags(channelId: string, allowlist: readonly string[], minTracks: number): Promise<string[]>;
   abstract bumpConfigVersion(channelId: string): Promise<void>;
 }
+
+export class VoteLimitError extends Error {}

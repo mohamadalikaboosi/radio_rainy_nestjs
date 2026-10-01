@@ -40,3 +40,5 @@ export abstract class AccountsRepository {
   abstract addLedger(accountId: string, amountCents: number, kind: LedgerEntry['kind'], refId: string | null, note: string | null): Promise<number | null>;
   abstract ledger(accountId: string, limit?: number): Promise<LedgerEntry[]>;
 }
+
+export class EmailTakenError extends Error {}

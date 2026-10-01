@@ -1,3 +1,4 @@
+import { EmailTakenError } from '../application/ports/accounts.repository';
 import { AccountsRepository, Account, AccountUser, AccountSummary, LedgerEntry } from '../application/ports/accounts.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
@@ -10,8 +11,6 @@ interface AccRow {
   created_at: Date;
 }
 const toAccount = (r: AccRow): Account => ({ id: r.id, name: r.name, status: r.status, creditCents: Number(r.credit_cents), createdAt: r.created_at.toISOString() });
-
-export class EmailTakenError extends Error {}
 
 @Injectable()
 export class PgAccountsRepository implements AccountsRepository {

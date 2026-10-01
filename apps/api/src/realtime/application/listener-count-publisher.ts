@@ -1,7 +1,7 @@
 import { listenersOf } from '../../radio/application/station-manager';
 import { Logger } from '@nestjs/common';
 import { StationManager } from '../../radio/application/station-manager';
-import { RealtimeBus } from '../infrastructure/events';
+import { RealtimeBus } from './ports/realtime-bus';
 
 /** Leader only: announces how many people listen to each running station (HTTP and WebSocket audio alike) when it changes, and at least every 20 s. */
 export class ListenerCountPublisher {

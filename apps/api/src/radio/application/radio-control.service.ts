@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PlaybackHistoryRepository } from './ports/playback-history.repository';
-import { RadioBus } from '../infrastructure/radio-bus';
+import { RadioBus } from './ports/radio-bus';
 import { ActorContext } from './radio-configuration.service';
 import { RadioStateRepository } from './ports/radio-state.repository';
 import { TrackRepository } from '../../catalog/application/ports/track.repository';

@@ -8,7 +8,7 @@ import { AdsRepository } from '../../engagement/application/ports/ads.repository
 import { AccountsRepository } from '../application/ports/accounts.repository';
 import { CampaignAction, CampaignStatus, InvalidTransitionError, transition } from '../domain/campaign-status';
 import { PlatformSettings, PlatformSettingsRepository } from '../application/ports/platform-settings.repository';
-import { platformSchema } from '../infrastructure/platform-settings.repository';
+import { platformSchema } from '../application/ports/platform-settings.repository';
 
 const ChannelIdPipe = new ZodPipe(z.string().regex(/^\d{1,20}$/, 'invalid channel id'));
 const actor = (req: AdminRequest): { actor: string; requestId: string | null } => ({ actor: req.admin.email, requestId: req.id === undefined ? null : String(req.id) });

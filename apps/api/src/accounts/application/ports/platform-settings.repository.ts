@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Operator switches. `billingEnabled` is OFF by default: everything is free and nothing is ever charged, limited or blocked for money.
  * Turn it on later (panel -> Platform) and the prices / credit checks below start to apply, with no code change.
@@ -20,3 +22,13 @@ export abstract class PlatformSettingsRepository {
   abstract get(): Promise<PlatformSettings>;
   abstract save(s: PlatformSettings): Promise<PlatformSettings>;
 }
+
+export const platformSchema = z.object({
+  billingEnabled: z.boolean(),
+  selfSignupEnabled: z.boolean(),
+  campaignApprovalRequired: z.boolean(),
+  pricePerPlayCents: z.number().int().min(0).max(1_000_000_000),
+  pricePerClickCents: z.number().int().min(0).max(1_000_000_000),
+  currency: z.string().trim().min(1).max(8),
+  maxCampaignsPerAccount: z.number().int().min(0).max(10_000),
+});

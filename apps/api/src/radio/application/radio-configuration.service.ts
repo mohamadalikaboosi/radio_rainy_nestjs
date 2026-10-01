@@ -4,7 +4,7 @@ import { AuditService } from '../../administration/application/audit.service';
 import { normalizeHashtag } from '../../catalog/domain/caption-parser';
 import { DatabaseService, Queryable } from '../../shared/infrastructure/database/database.service';
 import { PlaybackHistoryRepository } from './ports/playback-history.repository';
-import { RadioBus } from '../infrastructure/radio-bus';
+import { RadioBus } from './ports/radio-bus';
 import { RadioConfigRepository, RadioConfigWithMeta } from './ports/radio-config.repository';
 import { RadioRuleEngine } from '../domain/radio-rule-engine';
 import { RadioStateRepository } from './ports/radio-state.repository';

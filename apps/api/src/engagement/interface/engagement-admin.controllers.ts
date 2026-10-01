@@ -7,7 +7,7 @@ import { ChannelRepository } from '../../catalog/application/ports/channel.repos
 import { ZodPipe } from '../../shared/interface/zod.pipe';
 import { AdInput, AdsRepository } from '../application/ports/ads.repository';
 import { EngagementSettings, EngagementSettingsRepository } from '../application/ports/engagement-settings.repository';
-import { engagementSchema } from '../infrastructure/engagement-settings.repository';
+import { engagementSchema } from '../application/ports/engagement-settings.repository';
 import { inspectMp3 } from '../domain/mp3-info';
 import { isAllowedImage, isAudio, readRawBody } from './raw-body';
 import { SponsorInput, SponsorsRepository } from '../application/ports/sponsors.repository';

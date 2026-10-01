@@ -7,7 +7,7 @@ import { TagVoteService } from '../../engagement/application/tag-vote.service';
 import { StationManager } from '../../radio/application/station-manager';
 import { CurrentRadioService } from '../../radio/application/current-radio.service';
 import { LiveMessage, MessagesRepository } from '../application/ports/messages.repository';
-import { RealtimeBus, RealtimeEvent } from '../infrastructure/events';
+import { RealtimeBus, RealtimeEvent } from '../application/ports/realtime-bus';
 
 export interface RealtimeOptions {
   /** Open sockets allowed per client IP and instance. */

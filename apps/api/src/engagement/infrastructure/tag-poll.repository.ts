@@ -1,3 +1,4 @@
+import { VoteLimitError } from '../application/ports/tag-poll.repository';
 import { TagPollRepository, TagPoll } from '../application/ports/tag-poll.repository';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
@@ -15,8 +16,6 @@ interface Row {
 }
 
 const toPoll = (r: Row): TagPoll => ({ id: r.id, channelId: r.channel_id, options: r.options, opensAt: r.opens_at, closesAt: r.closes_at, status: r.status, winner: r.winner, playUntil: r.play_until, finished: r.finished });
-
-export class VoteLimitError extends Error {}
 
 @Injectable()
 export class PgTagPollRepository implements TagPollRepository {

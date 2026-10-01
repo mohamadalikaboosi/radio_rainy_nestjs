@@ -3,7 +3,7 @@ import { sign, verify } from 'jsonwebtoken';
 import { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../shared/kernel/password';
 import { AccountsRepository } from './ports/accounts.repository';
-import { EmailTakenError } from '../infrastructure/accounts.repository';
+import { EmailTakenError } from './ports/accounts.repository';
 import { PlatformSettingsRepository } from './ports/platform-settings.repository';
 
 export interface PortalIdentity {

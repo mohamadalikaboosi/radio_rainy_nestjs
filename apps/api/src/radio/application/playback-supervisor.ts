@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { DatabaseService, LOCKS } from '../../shared/infrastructure/database/database.service';
-import { RadioBus, RadioCommand } from '../infrastructure/radio-bus';
+import { RadioBus, RadioCommand } from './ports/radio-bus';
 import { PlaybackHistoryRepository } from './ports/playback-history.repository';
 import { StationManager } from './station-manager';
 

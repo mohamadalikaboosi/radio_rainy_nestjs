@@ -1,7 +1,9 @@
 import { EngagementSettingsRepository, EngagementSettings } from '../application/ports/engagement-settings.repository';
+
 import { Injectable } from '@nestjs/common';
-import { z } from 'zod';
+
 import { DatabaseService } from '../../shared/infrastructure/database/database.service';
+
 
 export const DEFAULT_ENGAGEMENT: EngagementSettings = {
   adsEveryNTracks: 0,
@@ -13,17 +15,6 @@ export const DEFAULT_ENGAGEMENT: EngagementSettings = {
   tagVoteAllowlist: [],
   audioTransport: 'HTTP',
 };
-
-export const engagementSchema = z.object({
-  adsEveryNTracks: z.number().int().min(0).max(100),
-  tagVoteEnabled: z.boolean(),
-  tagVoteIntervalMinutes: z.number().int().min(1).max(1440),
-  tagVotePollMinutes: z.number().int().min(1).max(60),
-  tagVotePlayMinutes: z.number().int().min(1).max(240),
-  tagVoteOptions: z.number().int().min(2).max(6),
-  tagVoteAllowlist: z.array(z.string().trim().min(1).max(64)).max(100),
-  audioTransport: z.enum(['HTTP', 'WEBSOCKET']).default('HTTP'),
-});
 
 interface Row {
   ads_every_n_tracks: number;

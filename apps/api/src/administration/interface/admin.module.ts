@@ -4,7 +4,7 @@ import { DatabaseService } from '../../shared/infrastructure/database/database.s
 import { LyricsPipeline } from '../../lyrics/application/lyrics-pipeline';
 import { LyricsRepository } from '../../lyrics/application/ports/lyrics.repository';
 import { PlaybackHistoryRepository } from '../../radio/application/ports/playback-history.repository';
-import { RADIO_BUS, RadioBus } from '../../radio/infrastructure/radio-bus';
+import { RADIO_BUS, RadioBus } from '../../radio/application/ports/radio-bus';
 import { RadioConfigRepository } from '../../radio/application/ports/radio-config.repository';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { ChannelService } from '../../catalog/application/channel.service';
