@@ -1,4 +1,5 @@
 import { Writable } from 'node:stream';
+import { LiveQuality } from '../../domain/live-quality';
 
 /** RTMP ingest of a Telegram channel's live stream (the "Stream with..." feature of Telegram voice chats). */
 export interface RtmpTarget {
@@ -18,10 +19,12 @@ export interface PublishHooks {
   onActive?: () => void;
   /** Every line ffmpeg printed (warnings/errors), for the log. */
   onLog?: (line: string) => void;
+  /** ffmpeg's encoding speed (1.0 = exactly real time); well below 1 means the uplink cannot keep up. */
+  onSpeed?: (speed: number) => void;
 }
 
 /** The process that pushes audio to Telegram. Abstracted so tests never spawn ffmpeg. */
 export interface RtmpPublisher {
   /** Runs until the process exits or `signal` aborts. `input` is the MP3 radio stream. */
-  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks?: PublishHooks): Promise<{ code: number | null; stderr: string }>;
+  publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks?: PublishHooks, quality?: LiveQuality): Promise<{ code: number | null; stderr: string }>;
 }

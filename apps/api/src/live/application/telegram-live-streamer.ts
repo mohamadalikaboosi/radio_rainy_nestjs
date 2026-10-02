@@ -4,6 +4,7 @@ import { Writable } from 'node:stream';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { Broadcaster } from '../../radio/domain/broadcaster';
 import { HttpListenerSink } from '../../radio/application/http-listener-sink';
+import { Decision, LiveQualityController } from '../domain/live-quality';
 
 export interface LiveOptions {
   retryMinMs: number;
@@ -34,6 +35,7 @@ export class TelegramLiveStreamer {
     private readonly publisher: RtmpPublisher,
     private readonly channels: Pick<ChannelRepository, 'setLiveStatus'>,
     private readonly opt: LiveOptions = DEFAULT_LIVE_OPTIONS,
+    private readonly quality = new LiveQualityController(),
     private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void> = (ms, signal) =>
       new Promise((resolve) => {
         const t = setTimeout(resolve, ms);
@@ -64,10 +66,12 @@ export class TelegramLiveStreamer {
 
   private async run(signal: AbortSignal): Promise<void> {
     let delay = this.opt.retryMinMs;
+    let resume = false; // restarting only to change the quality: the status stays LIVE, no back-off
     while (!signal.aborted) {
       const startedAt = Date.now();
       try {
-        await this.channels.setLiveStatus(this.channelId, 'STARTING', null);
+        if (!resume) await this.channels.setLiveStatus(this.channelId, 'STARTING', null);
+        resume = false;
         const target = await this.api.openLiveStream(this.channelId, this.title);
         if (signal.aborted) return;
         this.logger.log({ msg: 'telegram live: publishing', channelId: this.channelId, server: target.url });
@@ -76,6 +80,9 @@ export class TelegramLiveStreamer {
         signal.addEventListener('abort', onOuterAbort, { once: true });
         let active = false;
         let hung = false;
+        let adapting: Decision = null;
+        const q = this.quality.quality;
+        this.quality.attemptStarted(Date.now());
         const watchdog = setTimeout(() => {
           if (active || signal.aborted) return;
           hung = true;
@@ -90,17 +97,31 @@ export class TelegramLiveStreamer {
             void this.channels.setLiveStatus(this.channelId, 'LIVE', null).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
           },
           onLog: (line) => this.logger.warn({ msg: 'ffmpeg', channelId: this.channelId, line }),
+          onSpeed: (speed) => {
+            if (adapting || signal.aborted) return;
+            const d = this.quality.observe(speed, Date.now());
+            if (!d) return;
+            adapting = d;
+            this.logger.warn({ msg: `telegram live: connection ${d === 'down' ? 'too slow' : 'healthy'}; ${d === 'down' ? 'lowering' : 'raising'} the quality`, channelId: this.channelId, from: q.name, to: this.quality.quality.name, speed });
+            attempt.abort();
+          },
         };
-        const res = await this.publisher.publish(target, (sink) => this.attach(sink), attempt.signal, hooks).finally(() => {
+        this.logger.log({ msg: 'telegram live: quality', channelId: this.channelId, quality: q.name, videoKbps: q.videoKbps, audioKbps: q.audioKbps });
+        const res = await this.publisher.publish(target, (sink) => this.attach(sink), attempt.signal, hooks, q).finally(() => {
           clearTimeout(watchdog);
           signal.removeEventListener('abort', onOuterAbort);
         });
+        if (adapting && !signal.aborted) {
+          resume = true;
+          continue;
+        }
         if (hung) throw new Error(`ffmpeg connected but Telegram accepted no data within ${Math.round(this.opt.activeTimeoutMs / 1000)} s (RTMPS handshake stuck?) ${res.stderr.trim().split(target.key).join('<stream-key>')}`.trim());
         if (signal.aborted) return;
         throw new Error(`ffmpeg exited (${res.code}) ${res.stderr.trim().split(target.key).join('<stream-key>')}`);
       } catch (err) {
         if (signal.aborted) return;
         const message = err instanceof Error ? err.message : String(err);
+        if (this.quality.crashed(Date.now()) === 'down') this.logger.warn({ msg: 'telegram live: the connection keeps dropping; lowering the quality', channelId: this.channelId, to: this.quality.quality.name });
         this.logger.warn({ msg: 'telegram live stream failed; will retry', channelId: this.channelId, err: message, retryInMs: delay });
         await this.channels.setLiveStatus(this.channelId, 'ERROR', message.slice(0, 1200)).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
         if (Date.now() - startedAt > this.opt.stableAfterMs) delay = this.opt.retryMinMs;

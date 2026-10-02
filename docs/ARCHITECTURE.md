@@ -40,7 +40,7 @@ Use cases are therefore testable with fakes, and swapping Postgres/Redis/Telegra
 | `engagement` | ads, sponsors, tag vote, per-station engagement settings | `AdsRepository`, `SponsorsRepository`, `TagPollRepository`, `EngagementSettingsRepository` | `Pg*Repository` |
 | `accounts` | advertiser / station-owner portal, campaigns review, billing switch (off by default) | `AccountsRepository`, `PlatformSettingsRepository` | `Pg*Repository` |
 | `administration` | Super Admin login, dashboard, reports, settings, audit log | `AdminUsersRepository`, `AuditService`, `SettingsService`, `ReportsService`, `StatsService`, `DashboardService`, `SystemReportService` | `Pg*` (SQL read models and settings persistence) |
-| `live` | Telegram live stream (RTMP) | `TelegramLiveApi`, `RtmpPublisher` | `GramJsLiveApi`, `FfmpegRtmpPublisher`, `NowPlayingText` |
+| `live` | Telegram live stream (RTMP), adaptive quality (`domain/live-quality`), ad banner on the video | `TelegramLiveApi`, `RtmpPublisher` | `GramJsLiveApi`, `FfmpegRtmpPublisher`, `NowPlayingText`, `LiveSlide` |
 | `realtime` | WebSocket control channel, announcements | `RealtimeBus`, `MessagesRepository` | `RedisRealtimeBus`, `PgMessagesRepository` |
 
 Cross-context rules: a context talks to another through its `application` layer (use cases and ports) or its `domain` types, never through its
