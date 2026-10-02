@@ -1,12 +1,21 @@
 import { Writable } from 'node:stream';
 import { Broadcaster } from '../streaming/broadcaster';
+import { DEFAULT_ADAPT, LIVE_LADDER, LiveQualityController } from './live-quality';
 import { buildFfmpegRtmpArgs, RtmpPublisher, RtmpTarget, TelegramLiveApi, TelegramLiveStreamer } from './telegram-live-streamer';
 
 describe('buildFfmpegRtmpArgs', () => {
   it('publishes mp3 from stdin + a still video to url+key, AAC at 48 kHz', () => {
-    const args = buildFfmpegRtmpArgs({ url: 'rtmps://dc5-1.rtmp.t.me:443/s/', key: 'abc-123' }, 128);
+    const args = buildFfmpegRtmpArgs({ url: 'rtmps://dc5-1.rtmp.t.me:443/s/', key: 'abc-123' }, LIVE_LADDER[0]);
     expect(args.at(-1)).toBe('rtmps://dc5-1.rtmp.t.me:443/s/abc-123');
     expect(args).toEqual(expect.arrayContaining(['-f', 'mp3', '-i', 'pipe:0', '-c:a', 'aac', '-ar', '48000', '-f', 'flv']));
+    expect(args).toEqual(expect.arrayContaining(['-b:a', '128k', '-b:v', '500k']));
+    // a lower rung shrinks both the audio and the picture
+    const low = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[2], undefined);
+    expect(low).toEqual(expect.arrayContaining(['-b:a', '64k', '-b:v', '120k']));
+    expect(low[low.indexOf('-vf') + 1]).toContain('scale=640:360');
+    // the picture comes from a PNG that ffmpeg re-reads for every frame (so an ad banner can replace it live)
+    const withSlide = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[0], undefined, '/tmp/slide.png');
+    expect(withSlide.slice(withSlide.indexOf('image2') - 1, withSlide.indexOf('image2') + 7)).toEqual(['-f', 'image2', '-loop', '1', '-framerate', '5', '-i', '/tmp/slide.png']);
     // url without trailing slash still joins correctly
     expect(buildFfmpegRtmpArgs({ url: 'rtmps://x/s', key: 'k' }).at(-1)).toBe('rtmps://x/s/k');
   });
@@ -22,7 +31,7 @@ describe('TelegramLiveStreamer', () => {
     }
   };
 
-  function setup(publish: RtmpPublisher['publish'], openImpl?: TelegramLiveApi['openLiveStream']) {
+  function setup(publish: RtmpPublisher['publish'], openImpl?: TelegramLiveApi['openLiveStream'], quality = new LiveQualityController()) {
     const statuses: [string, string | null][] = [];
     const api: TelegramLiveApi = { openLiveStream: openImpl ?? (async () => target), closeLiveStream: jest.fn(async () => undefined) };
     const broadcaster = new Broadcaster(1000);
@@ -30,6 +39,7 @@ describe('TelegramLiveStreamer', () => {
       '1001', 'Radio', broadcaster, api, { publish },
       { setLiveStatus: async (_id, s, e = null) => void statuses.push([s, e]) },
       { retryMinMs: 5, retryMaxMs: 20, maxBacklogBytes: 1024, stableAfterMs: 10_000, activeTimeoutMs: 400 },
+      quality,
       (ms, signal) => new Promise((r) => { const t = setTimeout(r, ms); signal.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); }),
     );
     return { streamer, statuses, api, broadcaster };
@@ -113,6 +123,29 @@ describe('TelegramLiveStreamer', () => {
     await wait(() => runs >= 2);
     expect(statuses.some((s) => s[0] === 'LIVE')).toBe(false);
     expect(statuses.find((s) => s[0] === 'ERROR')?.[1]).toMatch(/accepted no data.*tls: timeout/);
+    await streamer.stop();
+  });
+
+  it('a connection too slow for real time lowers the quality and restarts WITHOUT an error or a back-off; later attempts use the new level', async () => {
+    const levels: string[] = [];
+    const quality = new LiveQualityController(LIVE_LADDER, { ...DEFAULT_ADAPT, windowMs: 50, cooldownMs: 0, slowSpeed: 0.9 });
+    const { streamer, statuses } = setup(async (_t, _i, signal, hooks, q) => {
+      levels.push(q?.name ?? '?');
+      hooks?.onActive?.();
+      if (levels.length === 1) {
+        // the first attempt: ffmpeg reports it only runs at 0.5x real time
+        for (let i = 0; i < 12 && !signal.aborted; i++) {
+          hooks?.onSpeed?.(0.5);
+          await new Promise((r) => setTimeout(r, 15));
+        }
+      }
+      if (!signal.aborted) await new Promise<void>((r) => signal.addEventListener('abort', () => r(), { once: true }));
+      return { code: null, stderr: '' };
+    }, undefined, quality);
+    streamer.start();
+    await wait(() => levels.length >= 2);
+    expect(levels.slice(0, 2)).toEqual(['high', 'medium']);
+    expect(statuses.some((s) => s[0] === 'ERROR')).toBe(false);
     await streamer.stop();
   });
 

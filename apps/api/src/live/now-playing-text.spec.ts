@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drawtextFilter, filterEscape, NowPlayingText } from './now-playing-text';
+import { LIVE_LADDER } from './live-quality';
 import { buildFfmpegRtmpArgs } from './telegram-live-streamer';
 
 describe('now playing on the Telegram live video', () => {
@@ -22,11 +23,11 @@ describe('now playing on the Telegram live video', () => {
 
   it('the ffmpeg args get the drawtext filter only when an overlay is given', () => {
     const np = new NowPlayingText(dir(), '42', 'Radio');
-    const withText = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, 128, np.overlay);
+    const withText = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[0], np.overlay);
     const vf = withText[withText.indexOf('-vf') + 1];
     expect(vf).toContain('drawtext=textfile=');
     expect(vf).toContain('reload=1');
-    expect(buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' })).not.toContain('-vf');
+    expect(buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' })[buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }).indexOf('-vf') + 1]).not.toContain('drawtext');
   });
 
   it('escapes filter-special characters in paths', () => {

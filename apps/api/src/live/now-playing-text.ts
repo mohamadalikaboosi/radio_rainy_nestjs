@@ -48,9 +48,13 @@ export class NowPlayingText {
 /** Escapes a value for use inside an ffmpeg filter option. */
 export const filterEscape = (s: string): string => s.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 
-/** The `-vf` chain that draws the two text files centred on the video. */
-export function drawtextFilter(o: NowPlayingOverlay): string {
+/** The `drawtext` filters that write the two text files in the lower third of the video (the picture above stays free for an ad banner). `scale` = video height / 720. */
+export function drawtextFilter(o: NowPlayingOverlay, scale = 1): string {
   const font = o.fontFile ? `fontfile='${filterEscape(o.fontFile)}':` : '';
   const common = `${font}reload=1:fontcolor=white:x=(w-text_w)/2:borderw=2:bordercolor=black@0.6`;
-  return [`drawtext=textfile='${filterEscape(o.titleFile)}':${common}:fontsize=56:y=(h/2)-70`, `drawtext=textfile='${filterEscape(o.artistFile)}':${common.replace('fontcolor=white', 'fontcolor=0xc8d0dc')}:fontsize=38:y=(h/2)+20`].join(',');
+  const size = (n: number): number => Math.max(14, Math.round(n * scale));
+  return [
+    `drawtext=textfile='${filterEscape(o.titleFile)}':${common}:fontsize=${size(54)}:y=h*0.72`,
+    `drawtext=textfile='${filterEscape(o.artistFile)}':${common.replace('fontcolor=white', 'fontcolor=0xc8d0dc')}:fontsize=${size(36)}:y=h*0.72+${size(72)}`,
+  ].join(',');
 }

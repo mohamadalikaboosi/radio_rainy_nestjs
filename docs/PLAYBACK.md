@@ -71,6 +71,14 @@ The WebSocket **control channel** (`/radio/:slug/ws`) is separate and always on:
 * **Client:** the player shows a selector (Auto / High / Low) when the station offers it, remembered in `localStorage`. *Auto* starts on low if the browser reports `saveData` or a 2g/3g connection, and switches to low after 3 stalls (`waiting`/`stalled`) in 20 s. Changing the quality while playing rejoins the live edge on the other stream.
 * Disable with `RADIO_LOW_QUALITY_ENABLED=false`.
 
+## Telegram live stream: adaptive quality and the ad banner
+
+The Telegram live (RTMP) is a second consumer of the same `Broadcaster`; it is one ffmpeg per station that re-encodes the radio MP3 to AAC + a picture.
+
+* **Adaptive bitrate (like a video player, on the sending side).** Four rungs (`live-quality.ts`): high 720p/500k+128k audio, medium 480p/250k+96k, low 360p/120k+64k, minimum 240p/60k+48k. `LiveQualityController` watches ffmpeg's `speed` (1.0x = real time). If the average over 10 s is below 0.92 (the uplink cannot keep up) or the connection drops twice within 90 s, it steps down one rung and restarts ffmpeg **without an error status and without back-off**; after a long healthy period (2 min, doubling up to 15 min when the better rung failed again) it carefully tries one rung up. Each change is logged (`telegram live: ... lowering the quality`). How Telegram delivers the stream to *viewers* is Telegram's own (it adapts for them); what this controls is the stream we send.
+* **Ad banner on the video.** The picture is a PNG (`slide-<channel>.png`) that ffmpeg re-reads for every frame (`-f image2 -loop 1`), so it can change without restarting the stream. While an ad with an image is on air, the image is composed once (a one-shot ffmpeg, off the live path) onto a 1280x720 frame and swapped in atomically; the lower third shows `AD · <name>` and the link host / button text (drawtext files, `reload=1`). When the ad ends the dark default comes back. Ads without an image show the text only.
+* Both are best effort: if ffmpeg cannot render the banner or has no `drawtext`, the stream just goes on without them.
+
 ## Failure handling
 
 | Failure | Behaviour |

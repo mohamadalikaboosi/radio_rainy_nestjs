@@ -33,6 +33,7 @@ import { LexiconRepository } from './language/lexicon';
 import { LanguageService } from './language/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
+import { LiveSlide } from './live/live-slide';
 import { NowPlayingText } from './live/now-playing-text';
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
@@ -223,10 +224,16 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
           });
           // the title + artist of the music on air are drawn on the Telegram live video
           const nowPlaying = new NowPlayingText(join(c.TMP_DIR, 'live'), channel.id, channel.title);
+          const slide = new LiveSlide(join(c.TMP_DIR, 'live'), channel.id, c.FFMPEG_PATH);
           engine.subscribe((e) => {
             if (e.type === 'track-started') {
+              slide.showDefault();
               void t.findById(e.trackId).then((tr) => tr && nowPlaying.set(tr.title, tr.artist ?? null)).catch(() => undefined);
+            } else if (e.type === 'ad-ended') {
+              slide.showDefault();
             } else if (e.type === 'ad-started') {
+              // the advertiser's banner goes on the picture of the live video; the text below names the ad
+              void adsRepo.image(e.adId).then((img) => (img ? slide.showAd(img) : false)).catch(() => false);
               // the ad on air: "AD" + its name, and where to go (the link's host, or the button text)
               void adsRepo.onAir(e.adId).then((ad) => {
                 if (!ad) return nowPlaying.set('AD', null);
@@ -240,7 +247,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
               }).catch(() => nowPlaying.set('AD', null));
             }
           });
-          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, c.RADIO_STREAM_BITRATE_KBPS, nowPlaying.overlay), channels, DEFAULT_LIVE_OPTIONS);
+          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, nowPlaying.overlay, slide.path), channels, DEFAULT_LIVE_OPTIONS);
           const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
           return { channel, broadcaster, engine, live, low };
         }),
