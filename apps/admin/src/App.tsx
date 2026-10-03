@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useParams } from 'react-router-dom';
 import { PASSWORD_CHANGE_EVENT, UNAUTHORIZED_EVENT, api, authStore } from './api';
 import { ChannelProvider, useChannels } from './channel-context';
 import { Icon } from './icons';
@@ -202,12 +202,19 @@ function Panel() {
   );
 }
 
+/** Direct link of one station: /s/<slug>. Plays only that station. */
+function StationPage() {
+  const { slug } = useParams();
+  return <Player key={slug} lockedSlug={slug ?? ''} />;
+}
+
 export function App() {
   return (
     <I18nProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Player />} />
+        <Route path="/s/:slug" element={<StationPage />} />
         <Route path="/panel/*" element={<Panel />} />
         <Route path="/partner/*" element={<PortalApp />} />
         <Route path="*" element={<Navigate to="/" replace />} />

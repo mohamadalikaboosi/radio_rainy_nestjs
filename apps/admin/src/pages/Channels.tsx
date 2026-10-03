@@ -1,3 +1,4 @@
+import { DirectLink } from '../player/DirectLink';
 import { FormEvent, useState } from 'react';
 import { ChannelItem, api } from '../api';
 import { useChannels } from '../channel-context';
@@ -58,7 +59,7 @@ export function Channels() {
               {channels.map((c) => (
                 <tr key={c.id} className={selected?.id === c.id ? 'row-selected' : ''}>
                   <td><b>{c.title}</b><br /><small className="muted">{c.reference}</small></td>
-                  <td><code>/radio/{c.slug}/stream</code></td>
+                  <td><code>/radio/{c.slug}/stream</code><DirectLink slug={c.slug} /></td>
                   <td>{c.started ? <Badge tone="good">started</Badge> : <Badge>stopped</Badge>}</td>
                   <td>
                     <label className="radio-line">

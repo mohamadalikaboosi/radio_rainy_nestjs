@@ -1,3 +1,4 @@
+import { DirectLink } from '../player/DirectLink';
 import { useState } from 'react';
 import { MyStation, api } from '../api';
 import { useAsync } from '../hooks';
@@ -28,6 +29,7 @@ export function PortalStations() {
           <p>
             <code>/radio/{s.slug}/stream</code>
           </p>
+          <DirectLink slug={s.slug} />
           <button className="btn btn-small" onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
             {t('portal.settings')}
           </button>

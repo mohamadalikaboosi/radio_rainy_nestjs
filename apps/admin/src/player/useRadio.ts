@@ -57,10 +57,11 @@ export interface ActiveLine {
 }
 
 /** All public-API state of one station: what is on air, lyrics, the vote and sponsors. Nothing here needs a login. */
-export function useRadio() {
+export function useRadio(lockedSlug?: string) {
   const stations = useAsync(() => api<Station[]>('/radio/stations'), [], 10_000);
   const [picked, setPicked] = useState<string | null>(null);
-  const slug = picked ?? stations.data?.find((s) => s.live)?.slug ?? stations.data?.[0]?.slug ?? null;
+  // a direct station link (/s/:slug) is locked to that one station: nothing can switch it
+  const slug = lockedSlug ?? picked ?? stations.data?.find((s) => s.live)?.slug ?? stations.data?.[0]?.slug ?? null;
   const base = slug ? `/radio/${slug}` : null;
 
   // The live socket pushes everything; polling only runs as a safety net (slowly while connected, every second without a socket).
@@ -100,5 +101,5 @@ export function useRadio() {
   // Connected: the pushed tally is the freshest (my own POST is broadcast too). Otherwise the REST answers are all there is.
   const merged: VoteView | null = rt.connected && rt.vote && shared ? { ...shared, myVote: shared.poll && shared.poll.id === minePoll ? mine : null } : (localVote ?? shared ?? null);
 
-  return { stations: stations.data, slug, pick: setPicked, base, current: currentData, fetchedAt, lyrics: lyrics.data, active: active.data, sponsors: sponsors.data ?? [], vote: merged, cast, realtime: rt };
+  return { stations: stations.data, slug, pick: lockedSlug ? () => undefined : setPicked, base, current: currentData, fetchedAt, lyrics: lyrics.data, active: active.data, sponsors: sponsors.data ?? [], vote: merged, cast, realtime: rt };
 }
