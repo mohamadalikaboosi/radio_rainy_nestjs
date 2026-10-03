@@ -22,6 +22,7 @@ import { Language } from './pages/Language';
 import { Live } from './pages/Live';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
+import { Landing } from './landing/Landing';
 import { RadioConfig } from './pages/RadioConfig';
 import { Reports } from './pages/Reports';
 import { Rules } from './pages/Rules';
@@ -108,7 +109,7 @@ function TopBar({ onSignOut }: { onSignOut: () => void }) {
       <span className="chip"><span className={`dot ${tg === 'READY' ? 'dot-good' : tg === 'NOT_LOGGED_IN' || tg === 'NOT_CONFIGURED' ? 'dot-warn' : 'dot-bad'}`} />Telegram {tg.toLowerCase().replace(/_/g, ' ')}</span>
       {problems > 0 && <span className="chip"><span className="dot dot-bad" />✕ {problems} station{problems > 1 ? 's' : ''} with problems</span>}
       <span className="spacer" />
-      <a className="chip" href="/" target="_blank" rel="noreferrer"><Icon name="external" /> {t('topbar.publicPlayer')}</a>
+      <a className="chip" href="/listen" target="_blank" rel="noreferrer"><Icon name="external" /> {t('topbar.publicPlayer')}</a>
       <button className="btn btn-small" onClick={onSignOut}>{t('topbar.signOut')}</button>
     </header>
   );
@@ -213,7 +214,8 @@ export function App() {
     <I18nProvider>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Player />} />
+        <Route path="/" element={<Landing />} />
+        <Route path="/listen" element={<Player />} />
         <Route path="/s/:slug" element={<StationPage />} />
         <Route path="/panel/*" element={<Panel />} />
         <Route path="/partner/*" element={<PortalApp />} />
