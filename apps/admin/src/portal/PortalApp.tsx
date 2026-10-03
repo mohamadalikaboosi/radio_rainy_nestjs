@@ -81,7 +81,7 @@ function PortalLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
         <button className="btn btn-primary" disabled={busy}>
           {mode === 'login' ? t('portal.signIn') : t('portal.createAccount')}
         </button>
-        <a className="muted" href="/">
+        <a className="muted" href="/listen">
           ← {t('portal.backToRadio')}
         </a>
       </form>
@@ -119,7 +119,7 @@ export function PortalApp() {
           <span className="chip">{me.data?.account.name ?? '…'}</span>
           <span className="muted">{me.data?.email}</span>
           <span className="spacer" />
-          <a className="chip" href="/">
+          <a className="chip" href="/listen">
             {t('portal.backToRadio')}
           </a>
           <button

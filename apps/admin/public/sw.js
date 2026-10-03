@@ -4,7 +4,7 @@
 const VERSION = 'v1';
 const SHELL = `rr-shell-${VERSION}`;
 const ASSETS = `rr-assets-${VERSION}`;
-const PRECACHE = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const PRECACHE = ['/', '/listen', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

@@ -1,0 +1,108 @@
+/* Landing page: same dark "rainy" identity as the player. Logical properties, so Persian (RTL) just works. */
+.lp {
+  --lp-bg: #0b0d13;
+  --lp-ink: #f3f4f8;
+  --lp-dim: #a9afc0;
+  --lp-line: rgba(255, 255, 255, 0.12);
+  --lp-glass: rgba(255, 255, 255, 0.06);
+  --lp-a: hsl(232 85% 68%);
+  --lp-b: hsl(285 80% 68%);
+  position: relative;
+  min-height: 100vh;
+  color: var(--lp-ink);
+  background: var(--lp-bg);
+  overflow-x: hidden;
+  color-scheme: dark;
+  font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Vazirmatn', Tahoma, sans-serif;
+}
+.lp a { color: inherit; text-decoration: none; }
+.lp h1, .lp h2, .lp h3, .lp p, .lp ul, .lp ol { margin: 0; padding: 0; }
+.lp ul, .lp ol { list-style: none; }
+.lp > * { position: relative; z-index: 1; }
+.lp > .lp-rain { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.lp-rain {
+  background:
+    radial-gradient(60vmax 50vmax at 10% -10%, hsl(232 80% 38% / .55), transparent 60%),
+    radial-gradient(50vmax 50vmax at 100% 30%, hsl(285 75% 34% / .4), transparent 60%),
+    repeating-linear-gradient(105deg, transparent 0 46px, rgba(255, 255, 255, .035) 46px 47px);
+  background-size: auto, auto, 100% 100%;
+  animation: lp-rain 1.6s linear infinite;
+}
+@keyframes lp-rain { to { background-position: 0 0, 0 0, 47px 120px; } }
+
+.lp-nav { display: flex; align-items: center; gap: 1rem; padding: .9rem clamp(1rem, 4vw, 2.5rem); flex-wrap: wrap; justify-content: space-between; }
+.lp-logo { font-weight: 800; letter-spacing: .02em; font-size: 1.15rem; }
+.lp-links { display: flex; gap: 1.25rem; color: var(--lp-dim); font-size: .95rem; flex-wrap: wrap; }
+.lp-links a:hover { color: var(--lp-ink); }
+.lp-nav-end { display: flex; gap: .6rem; align-items: center; }
+.lp-select { font: inherit; font-size: .85rem; color: var(--lp-ink); background: var(--lp-glass); border: 1px solid var(--lp-line); border-radius: 999px; padding: .35rem .7rem; }
+.lp-select option { color: #111; }
+
+.lp-btn { display: inline-flex; align-items: center; gap: .5rem; font: inherit; font-weight: 600; border-radius: 999px; padding: .7rem 1.3rem; border: 1px solid var(--lp-line); cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.lp-btn:hover { transform: translateY(-1px); }
+.lp-btn:focus-visible, .lp-card:focus-visible, .lp-links a:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.lp-btn-primary { background: linear-gradient(120deg, var(--lp-a), var(--lp-b)); border-color: transparent; color: #fff; box-shadow: 0 8px 30px -8px var(--lp-a); }
+.lp-btn-ghost { background: var(--lp-glass); backdrop-filter: blur(8px); }
+.lp-btn-ghost:hover { border-color: var(--lp-a); }
+.lp-big { font-size: 1.15rem; padding: .9rem 1.8rem; }
+
+main { max-width: 1120px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2rem); }
+.lp-hero { display: grid; gap: 2.5rem; padding: clamp(2rem, 7vw, 5rem) 0 3rem; align-items: center; }
+@media (min-width: 900px) { .lp-hero { grid-template-columns: 1.15fr .85fr; } }
+.lp-eyebrow { color: var(--lp-a); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: .8rem; margin-bottom: .75rem; }
+.lp h1 { font-size: clamp(2.2rem, 6vw, 4rem); line-height: 1.08; letter-spacing: -.02em; background: linear-gradient(120deg, #fff 30%, hsl(232 90% 82%)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lp-lead { margin-top: 1.1rem; color: var(--lp-dim); font-size: 1.15rem; max-width: 36rem; }
+.lp-cta { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.75rem; }
+.lp-proof { display: flex; gap: .5rem 1.25rem; flex-wrap: wrap; margin-top: 1.5rem; color: var(--lp-dim); font-size: .9rem; }
+.lp-proof li::before { content: '✓'; color: hsl(150 70% 60%); margin-inline-end: .4rem; }
+
+.lp-device { border-radius: 28px; padding: 1.1rem; background: linear-gradient(160deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); border: 1px solid var(--lp-line); backdrop-filter: blur(14px); box-shadow: 0 30px 80px -30px rgba(0,0,0,.8); max-width: 360px; width: 100%; margin-inline: auto; }
+.lp-device-top { display: flex; align-items: center; gap: .5rem; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--lp-dim); }
+.lp-dot { width: .6rem; height: .6rem; border-radius: 50%; background: #666; }
+.lp-dot.on { background: #ff4d6d; box-shadow: 0 0 0 0 rgba(255,77,109,.6); animation: lp-pulse 1.6s infinite; }
+@keyframes lp-pulse { 70% { box-shadow: 0 0 0 10px rgba(255,77,109,0); } 100% { box-shadow: 0 0 0 0 rgba(255,77,109,0); } }
+.lp-cover { margin: .9rem 0; aspect-ratio: 1; border-radius: 20px; background: radial-gradient(circle at 30% 20%, hsl(232 85% 60%), hsl(285 70% 35%) 70%); display: flex; align-items: flex-end; padding: 1rem; overflow: hidden; }
+.lp-bars { display: flex; align-items: flex-end; gap: 4px; height: 55%; width: 100%; }
+.lp-bars i { flex: 1; background: rgba(255,255,255,.85); border-radius: 3px; height: 20%; animation: lp-eq 900ms ease-in-out infinite alternate; }
+@keyframes lp-eq { to { height: 100%; } }
+.lp-track { display: flex; flex-direction: column; }
+.lp-track b { font-size: 1.1rem; }
+.lp-track span { color: var(--lp-dim); font-size: .9rem; }
+.lp-lines { display: flex; flex-direction: column; gap: .15rem; margin-top: .8rem; font-size: .95rem; color: var(--lp-dim); text-align: center; }
+.lp-lines .act { color: #fff; font-weight: 700; font-size: 1.05rem; }
+
+.lp-section { padding: 3rem 0; }
+.lp-section h2 { font-size: clamp(1.6rem, 4vw, 2.3rem); letter-spacing: -.01em; }
+.lp-sub { color: var(--lp-dim); margin-top: .5rem; max-width: 40rem; }
+.lp-grid { display: grid; gap: 1rem; margin-top: 1.5rem; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.lp-card { background: var(--lp-glass); border: 1px solid var(--lp-line); border-radius: 20px; padding: 1.2rem; backdrop-filter: blur(8px); display: block; }
+.lp-features .lp-card p, .lp-steps p { color: var(--lp-dim); font-size: .95rem; margin-top: .35rem; }
+.lp-features .lp-card, .lp-steps li { display: flex; flex-direction: column; align-items: flex-start; }
+.lp-ico { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 12px; margin-bottom: .6rem; color: #fff; background: linear-gradient(135deg, var(--lp-a), var(--lp-b)); }
+.lp-station { display: flex; flex-direction: column; gap: .3rem; height: 100%; transition: transform .15s, border-color .15s; }
+.lp-station:hover { transform: translateY(-3px); border-color: var(--lp-a); }
+.lp-live { align-self: flex-start; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #ff4d6d; border: 1px solid rgba(255,77,109,.5); border-radius: 999px; padding: .1rem .55rem; }
+.lp-np { color: var(--lp-dim); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-go { margin-top: auto; padding-top: .5rem; color: var(--lp-a); font-weight: 600; }
+.lp-empty { color: var(--lp-dim); margin-top: 1rem; }
+
+.lp-steps { display: grid; gap: 1rem; margin-top: 1.5rem; }
+@media (min-width: 760px) { .lp-steps { grid-template-columns: repeat(3, 1fr); } }
+.lp-steps li { position: relative; padding: 1.2rem; border-radius: 20px; border: 1px dashed var(--lp-line); }
+.lp-num { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--lp-a); color: #fff; font-weight: 800; margin-bottom: .5rem; }
+
+.lp-split { display: grid; gap: 1rem; }
+@media (min-width: 760px) { .lp-split { grid-template-columns: 1fr 1fr; } }
+.lp-pane { display: flex; flex-direction: column; gap: .75rem; align-items: flex-start; padding: 1.6rem; }
+.lp-pane p { color: var(--lp-dim); }
+
+.lp-final { text-align: center; padding: 4rem 0; display: flex; flex-direction: column; gap: 1.5rem; align-items: center; }
+.lp-final h2 { font-size: clamp(1.8rem, 5vw, 2.8rem); }
+.lp-foot { display: flex; gap: 1rem 2rem; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 1.5rem clamp(1rem, 4vw, 2.5rem); border-top: 1px solid var(--lp-line); color: var(--lp-dim); font-size: .9rem; }
+.lp-foot nav { display: flex; gap: 1rem; }
+.lp-foot a:hover { color: var(--lp-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-rain, .lp-bars i, .lp-dot.on { animation: none; }
+  .lp-btn, .lp-station { transition: none; }
+}
