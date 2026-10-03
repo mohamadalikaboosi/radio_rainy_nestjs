@@ -147,9 +147,12 @@ function Lyrics({ c, lyrics, activeIndex, analyser, playing }: { c: Current | nu
 }
 
 /** Public listener page: one big play button, the radio's live state, lyrics or an equalizer, the vote and sponsors. */
-export function Player() {
+/** `lockedSlug`: the page of ONE station (direct link /s/:slug): no station picker, no other station reachable. */
+export function Player({ lockedSlug }: { lockedSlug?: string } = {}) {
   const t = useT();
-  const r = useRadio();
+  const r = useRadio(lockedSlug);
+  const lockedStation = lockedSlug ? r.stations?.find((s) => s.slug === lockedSlug) : undefined;
+  const unknownStation = !!lockedSlug && !!r.stations && !lockedStation;
   const transport = r.realtime.transport ?? r.stations?.find((s) => s.slug === r.slug)?.transport ?? 'HTTP';
   const lowAvailable = r.stations?.find((s) => s.slug === r.slug)?.lowQuality ?? false;
   const [qualityPref, setQualityPref] = useState<QualityPref>(loadQuality);
@@ -190,7 +193,7 @@ export function Player() {
     <div className="pl" style={{ ['--pl-hue' as string]: hue }} data-playing={playing}>
       <div className="pl-bg" aria-hidden />
       <header className="pl-top">
-        <div className="pl-brand">🌧 {t('player.title')}</div>
+        <div className="pl-brand">🌧 {lockedStation?.title ?? t('player.title')}</div>
         <div className="pl-top-actions">
           {install.canInstall && (
             <button className="pl-chip" onClick={install.install}>
@@ -218,7 +221,7 @@ export function Player() {
           )}
           {lowAvailable && quality === 'low' && playing && <span className="pl-chip" title={t('player.lowHint')}>🐢 {t('player.lowBadge')}</span>}
           <LanguageSwitcher className="pl-chip pl-select" />
-          {r.stations && r.stations.length > 1 && (
+          {!lockedSlug && r.stations && r.stations.length > 1 && (
             <select className="pl-chip pl-select" value={r.slug ?? ''} onChange={(e) => switchStation(e.target.value)} aria-label={t('player.station')}>
               {r.stations.map((s) => (
                 <option key={s.slug} value={s.slug}>
@@ -246,7 +249,8 @@ export function Player() {
 
       <main className="pl-main">
         <section className="pl-stage">
-          {r.stations && r.stations.length === 0 && <p className="pl-muted">{t('player.noStation')}</p>}
+          {r.stations && r.stations.length === 0 && !lockedSlug && <p className="pl-muted">{t('player.noStation')}</p>}
+          {unknownStation && <p className="pl-muted" role="alert">{t('player.stationNotFound')}</p>}
           {isAd && c?.ad ? (
             <AdCard ad={c.ad} now={now} serverTime={serverTime} fetchedAt={fetchedAt} />
           ) : (
