@@ -4,7 +4,7 @@ import { Writable } from 'node:stream';
 import { ChannelRepository } from '../channels/channel.repository';
 import { Broadcaster } from '../streaming/broadcaster';
 import { HttpListenerSink } from '../streaming/http-listener-sink';
-import { Decision, LiveQuality, LiveQualityController, LIVE_LADDER } from './live-quality';
+import { Decision, LiveQuality, LiveQualityController, LIVE_LADDER, SpeedMeter } from './live-quality';
 import { lowerPriority } from '../common/process-priority';
 
 /** RTMP ingest of a Telegram channel's live stream (the "Stream with..." feature of Telegram voice chats). */
@@ -46,7 +46,7 @@ export function buildFfmpegRtmpArgs(target: RtmpTarget, quality: LiveQuality = L
   return [
     '-nostdin', '-loglevel', 'warning', '-progress', 'pipe:1', '-nostats',
     // ONE realtime clock for both inputs (-re): Telegram drops a connection that is fed faster than real time
-    ...(slideFile ? ['-re', '-f', 'image2', '-loop', '1', '-framerate', String(q.fps), '-i', slideFile] : ['-re', '-f', 'lavfi', '-i', `color=c=0x0f1216:s=1280x720:r=${q.fps}`]), // Telegram requires a video track
+    ...(slideFile ? ['-re', '-thread_queue_size', '64', '-f', 'image2', '-loop', '1', '-framerate', String(q.fps), '-i', slideFile] : ['-re', '-f', 'lavfi', '-i', `color=c=0x0f1216:s=1280x720:r=${q.fps}`]), // Telegram requires a video track
     '-re', '-thread_queue_size', '1024', '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
     '-vf', `scale=${q.width}:${q.height}:flags=bilinear,format=yuv420p`,
@@ -76,6 +76,8 @@ export class FfmpegRtmpPublisher implements RtmpPublisher {
       // `-progress`: `total_size` is the number of bytes written to the output; > 0 means Telegram accepted the connection and the data
       let active = false;
       let pending = '';
+      let outUs: number | null = null;
+      const meter = new SpeedMeter();
       proc.stdout.on('data', (d: Buffer) => {
         pending += d.toString();
         const lines = pending.split(/\r?\n/);
@@ -88,8 +90,13 @@ export class FfmpegRtmpPublisher implements RtmpPublisher {
               hooks.onActive?.();
             }
           }
-          const sp = /^speed=\s*([\d.]+)x/.exec(line);
-          if (sp && active) hooks.onSpeed?.(Number(sp[1]));
+          const t = /^out_time_us=(\d+)/.exec(line);
+          if (t) outUs = Number(t[1]);
+          // end of one progress block: the CURRENT speed over a sliding window (ffmpeg's own `speed=` is an average since the start)
+          if (line.startsWith('progress=') && active && outUs !== null) {
+            const speed = meter.add(Date.now(), outUs);
+            if (speed !== null) hooks.onSpeed?.(speed);
+          }
         }
       });
       proc.stdin.on('error', () => undefined); // EPIPE when ffmpeg exits first

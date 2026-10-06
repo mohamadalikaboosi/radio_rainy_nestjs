@@ -33,6 +33,7 @@ import { LexiconRepository } from './language/lexicon';
 import { LanguageService } from './language/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
+import { LIVE_LADDER, LiveQualityController } from './live/live-quality';
 import { LiveSlide, Scene } from './live/live-slide';
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
@@ -250,7 +251,7 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
               }));
             }
           });
-          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, slide.path), channels, DEFAULT_LIVE_OPTIONS);
+          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, slide.path), channels, DEFAULT_LIVE_OPTIONS, c.TELEGRAM_LIVE_QUALITY === 'auto' ? new LiveQualityController() : new LiveQualityController(LIVE_LADDER.filter((q) => q.name === c.TELEGRAM_LIVE_QUALITY)));
           const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
           return { channel, broadcaster, engine, live, low };
         }),
