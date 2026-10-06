@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ChildProcess, spawn } from 'node:child_process';
+import { lowerPriority } from '../common/process-priority';
 import { Broadcaster, ListenerSink } from './broadcaster';
 
 export interface LowQualityOptions {
@@ -51,7 +52,11 @@ export class LowQualityStream {
   constructor(
     private readonly main: Broadcaster,
     private readonly opt: LowQualityOptions = DEFAULT_LOW,
-    private readonly spawnFn: Spawn = (c, a) => spawn(c, a, { stdio: ['pipe', 'pipe', 'pipe'] }),
+    private readonly spawnFn: Spawn = (c, a) => {
+      const p = spawn(c, a, { stdio: ['pipe', 'pipe', 'pipe'] });
+      lowerPriority(p);
+      return p;
+    },
     private readonly now: () => number = () => Date.now(),
   ) {
     this.broadcaster = new Broadcaster(Math.round(((opt.bitrateKbps * 1000) / 8) * opt.prebufferSeconds));

@@ -1,4 +1,4 @@
-import { Global, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { Global, Logger, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { ManualOrAutoLiveApi } from './live/manual-live-api';
 import { DEFAULT_LOW, LowQualityStream } from './streaming/low-quality-stream';
@@ -33,8 +33,7 @@ import { LexiconRepository } from './language/lexicon';
 import { LanguageService } from './language/language.service';
 import { LlmClient, OpenAiCompatibleLlm } from './language/llm-client';
 import { GramJsLiveApi } from './live/gramjs-live-api';
-import { LiveSlide } from './live/live-slide';
-import { NowPlayingText } from './live/now-playing-text';
+import { LiveSlide, Scene } from './live/live-slide';
 import { DEFAULT_LIVE_OPTIONS, FfmpegRtmpPublisher, TelegramLiveApi, TelegramLiveStreamer } from './live/telegram-live-streamer';
 import { SettingsService } from './settings/settings.service';
 import { AudioStoreSource } from './storage/audio-store';
@@ -222,32 +221,36 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
           engine.subscribe((e) => {
             if (e.type === 'track-started' || e.type === 'ad-started' || e.type === 'ad-ended') void rt.publish({ type: 'current', channelId: channel.id }).catch(() => undefined);
           });
-          // the title + artist of the music on air are drawn on the Telegram live video
-          const nowPlaying = new NowPlayingText(join(c.TMP_DIR, 'live'), channel.id, channel.title);
-          const slide = new LiveSlide(join(c.TMP_DIR, 'live'), channel.id, c.FFMPEG_PATH);
+          // The picture of the Telegram live video (song title + artist, or the ad and its banner) is drawn by a one-shot ffmpeg job into a PNG
+          // that the live encoder re-reads; it changes after a short delay so it matches what is HEARD in the stream (prebuffer + encoder queue).
+          const slideLog = new Logger('LiveSlide');
+          const slide = new LiveSlide(join(c.TMP_DIR, 'live'), channel.id, c.FFMPEG_PATH, undefined, (m) => slideLog.warn({ msg: m, channelId: channel.id }));
+          void slide.show({ title: channel.title });
+          let pendingScene: NodeJS.Timeout | undefined;
+          const showScene = (scene: Promise<Scene | null>): void => {
+            void scene.then((s) => {
+              if (!s) return;
+              clearTimeout(pendingScene);
+              pendingScene = setTimeout(() => void slide.show(s), c.TELEGRAM_LIVE_TEXT_DELAY_SECONDS * 1000);
+            }).catch(() => undefined);
+          };
           engine.subscribe((e) => {
             if (e.type === 'track-started') {
-              slide.showDefault();
-              void t.findById(e.trackId).then((tr) => tr && nowPlaying.set(tr.title, tr.artist ?? null)).catch(() => undefined);
-            } else if (e.type === 'ad-ended') {
-              slide.showDefault();
+              showScene(t.findById(e.trackId).then((tr) => (tr ? { title: tr.title, artist: tr.artist } : null)));
             } else if (e.type === 'ad-started') {
-              // the advertiser's banner goes on the picture of the live video; the text below names the ad
-              void adsRepo.image(e.adId).then((img) => (img ? slide.showAd(img) : false)).catch(() => false);
-              // the ad on air: "AD" + its name, and where to go (the link's host, or the button text)
-              void adsRepo.onAir(e.adId).then((ad) => {
-                if (!ad) return nowPlaying.set('AD', null);
-                let where = ad.ctaLabel ?? '';
+              // "AD" + its name, where to go (the link's host, or the button text) and the advertiser's banner
+              showScene(Promise.all([adsRepo.onAir(e.adId), adsRepo.image(e.adId)]).then(([ad, img]) => {
+                let where = ad?.ctaLabel ?? '';
                 try {
-                  if (ad.linkUrl) where = new URL(ad.linkUrl).host;
+                  if (ad?.linkUrl) where = new URL(ad.linkUrl).host;
                 } catch {
                   /* keep the button text */
                 }
-                nowPlaying.set(`AD · ${ad.name}`, where || null);
-              }).catch(() => nowPlaying.set('AD', null));
+                return { title: ad ? `AD · ${ad.name}` : 'AD', artist: where || null, ...(img ? { banner: img } : {}) };
+              }));
             }
           });
-          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, nowPlaying.overlay, slide.path), channels, DEFAULT_LIVE_OPTIONS);
+          const live = new TelegramLiveStreamer(channel.id, channel.title, broadcaster, liveApi, new FfmpegRtmpPublisher(c.FFMPEG_PATH, slide.path), channels, DEFAULT_LIVE_OPTIONS);
           const low = c.RADIO_LOW_QUALITY_ENABLED ? new LowQualityStream(broadcaster, { ...DEFAULT_LOW, ffmpegPath: c.FFMPEG_PATH, bitrateKbps: c.RADIO_LOW_BITRATE_KBPS, prebufferSeconds: c.RADIO_PREBUFFER_SECONDS }) : undefined;
           return { channel, broadcaster, engine, live, low };
         }),

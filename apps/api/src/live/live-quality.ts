@@ -10,10 +10,10 @@ export interface LiveQuality {
 
 /** Best first. The picture is a still frame, so the audio is what matters; the ladder shrinks both so a weak uplink keeps the music flowing. */
 export const LIVE_LADDER: readonly LiveQuality[] = [
-  { name: 'high', videoKbps: 500, audioKbps: 128, width: 1280, height: 720, fps: 25 },
-  { name: 'medium', videoKbps: 250, audioKbps: 96, width: 854, height: 480, fps: 15 },
-  { name: 'low', videoKbps: 120, audioKbps: 64, width: 640, height: 360, fps: 10 },
-  { name: 'minimum', videoKbps: 60, audioKbps: 48, width: 426, height: 240, fps: 5 },
+  { name: 'high', videoKbps: 300, audioKbps: 128, width: 1280, height: 720, fps: 5 },
+  { name: 'medium', videoKbps: 200, audioKbps: 96, width: 854, height: 480, fps: 5 },
+  { name: 'low', videoKbps: 120, audioKbps: 64, width: 640, height: 360, fps: 4 },
+  { name: 'minimum', videoKbps: 60, audioKbps: 48, width: 426, height: 240, fps: 2 },
 ];
 
 export interface AdaptOptions {

@@ -5,7 +5,7 @@ import { ChannelRepository } from '../channels/channel.repository';
 import { Broadcaster } from '../streaming/broadcaster';
 import { HttpListenerSink } from '../streaming/http-listener-sink';
 import { Decision, LiveQuality, LiveQualityController, LIVE_LADDER } from './live-quality';
-import { drawtextFilter, NowPlayingOverlay } from './now-playing-text';
+import { lowerPriority } from '../common/process-priority';
 
 /** RTMP ingest of a Telegram channel's live stream (the "Stream with..." feature of Telegram voice chats). */
 export interface RtmpTarget {
@@ -37,38 +37,36 @@ export interface RtmpPublisher {
 
 /**
  * Pure: the ffmpeg arguments used to publish MP3 audio (stdin) + a picture to Telegram over RTMP(S).
- * `slideFile` is a PNG that ffmpeg re-reads for every frame (so the picture can change without a restart); without it a dark frame is generated.
+ * Best practice for an audio radio on a video platform: the video is ONE still PNG (`slideFile`, re-read for every frame so the picture can
+ * change without a restart) at a few frames per second, so the encoder costs almost no CPU and the bitrate is all audio.
  */
-export function buildFfmpegRtmpArgs(target: RtmpTarget, quality: LiveQuality = LIVE_LADDER[0] as LiveQuality, overlay?: NowPlayingOverlay, slideFile?: string): string[] {
+export function buildFfmpegRtmpArgs(target: RtmpTarget, quality: LiveQuality = LIVE_LADDER[0] as LiveQuality, slideFile?: string): string[] {
   const base = target.url.endsWith('/') ? target.url : `${target.url}/`;
   const q = quality;
-  const inFps = Math.min(q.fps, 5); // a still picture: decoding it 5 times a second is plenty, `fps=` fills the rest
-  const filters = [`scale=${q.width}:${q.height}`, `fps=${q.fps}`, ...(overlay ? [drawtextFilter(overlay, q.height / 720)] : [])].join(',');
   return [
     '-nostdin', '-loglevel', 'warning', '-progress', 'pipe:1', '-nostats',
     // ONE realtime clock for both inputs (-re): Telegram drops a connection that is fed faster than real time
-    ...(slideFile ? ['-re', '-f', 'image2', '-loop', '1', '-framerate', String(inFps), '-i', slideFile] : ['-re', '-f', 'lavfi', '-i', `color=c=0x0f1216:s=1280x720:r=${inFps}`]), // Telegram requires a video track
+    ...(slideFile ? ['-re', '-f', 'image2', '-loop', '1', '-framerate', String(q.fps), '-i', slideFile] : ['-re', '-f', 'lavfi', '-i', `color=c=0x0f1216:s=1280x720:r=${q.fps}`]), // Telegram requires a video track
     '-re', '-thread_queue_size', '1024', '-f', 'mp3', '-i', 'pipe:0',
     '-map', '0:v', '-map', '1:a',
-    '-vf', filters,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-profile:v', 'main',
+    '-vf', `scale=${q.width}:${q.height}:flags=bilinear,format=yuv420p`,
+    '-af', 'aresample=async=1:first_pts=0', // silence instead of a gap if the source ever stalls: the connection never sees a hole
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage,zerolatency', '-profile:v', 'main', '-threads', '2',
     '-g', String(q.fps * 2), '-keyint_min', String(q.fps * 2), '-sc_threshold', '0', '-b:v', `${q.videoKbps}k`, '-maxrate', `${q.videoKbps}k`, '-bufsize', `${q.videoKbps * 2}k`, // keyframe every 2 s, constant rate
     '-c:a', 'aac', '-b:a', `${q.audioKbps}k`, '-ar', '48000', '-ac', '2',
-    '-max_muxing_queue_size', '1024',
+    '-max_muxing_queue_size', '1024', '-flush_packets', '1',
     '-flvflags', 'no_duration_filesize', '-f', 'flv', `${base}${target.key}`,
   ];
 }
 
 export class FfmpegRtmpPublisher implements RtmpPublisher {
-  /** Set when this ffmpeg build has no `drawtext`: the stream then continues without the text instead of not starting at all. */
-  private overlayBroken = false;
-
-  constructor(private readonly ffmpegPath = 'ffmpeg', private readonly overlay?: NowPlayingOverlay, private readonly slideFile?: string) {}
+  constructor(private readonly ffmpegPath = 'ffmpeg', private readonly slideFile?: string) {}
 
   publish(target: RtmpTarget, input: (sink: Writable) => () => void, signal: AbortSignal, hooks: PublishHooks = {}, quality: LiveQuality = LIVE_LADDER[0] as LiveQuality): Promise<{ code: number | null; stderr: string }> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return resolve({ code: null, stderr: '' });
-      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, quality, this.overlayBroken ? undefined : this.overlay, this.slideFile), { stdio: ['pipe', 'pipe', 'pipe'] });
+      const proc = spawn(this.ffmpegPath, buildFfmpegRtmpArgs(target, quality, this.slideFile), { stdio: ['pipe', 'pipe', 'pipe'] });
+      lowerPriority(proc);
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => {
         const text = d.toString();
@@ -105,10 +103,6 @@ export class FfmpegRtmpPublisher implements RtmpPublisher {
         reject(new Error(err.code === 'ENOENT' ? `ffmpeg not found at "${this.ffmpegPath}"` : err.message));
       });
       proc.on('close', (code) => {
-        if (this.overlay && !this.overlayBroken && /No such filter.*drawtext|drawtext.*(not found|Error initializing)|Cannot find a valid font|Could not load font/i.test(stderr)) {
-          this.overlayBroken = true;
-          hooks.onLog?.('this ffmpeg cannot draw text (drawtext/font missing): going on without the now-playing text');
-        }
         detach();
         signal.removeEventListener('abort', kill);
         resolve({ code, stderr });
@@ -192,6 +186,7 @@ export class TelegramLiveStreamer {
         let active = false;
         let hung = false;
         let adapting: Decision = null;
+        let lastSpeedLog = 0;
         const q = this.quality.quality;
         this.quality.attemptStarted(Date.now());
         const watchdog = setTimeout(() => {
@@ -209,6 +204,10 @@ export class TelegramLiveStreamer {
           },
           onLog: (line) => this.logger.warn({ msg: 'ffmpeg', channelId: this.channelId, line }),
           onSpeed: (speed) => {
+            if (Date.now() - lastSpeedLog > 30_000) {
+              lastSpeedLog = Date.now();
+              this.logger.log({ msg: 'telegram live: encoder speed', channelId: this.channelId, speed, quality: this.quality.quality.name });
+            }
             if (adapting || signal.aborted) return;
             const d = this.quality.observe(speed, Date.now());
             if (!d) return;
