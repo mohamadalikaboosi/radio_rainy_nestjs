@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useT } from '../i18n';
 
-export const stationUrl = (slug: string): string => `${window.location.origin}/s/${slug}`;
+export const stationUrl = (publicId: string): string => `${window.location.origin}/${publicId}`;
 
-/** The page of one station only (/s/<slug>): the link an operator or owner shares; it can never play another station. */
-export function DirectLink({ slug }: { slug: string }) {
+/** The permanent address of one station (/<uuid>): the link an operator or owner shares. It never changes and the page can never play another station. */
+export function DirectLink({ publicId }: { publicId: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
-  const url = stationUrl(slug);
+  const url = stationUrl(publicId);
   const copy = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(url);
@@ -20,7 +20,7 @@ export function DirectLink({ slug }: { slug: string }) {
   return (
     <div className="row wrap">
       <small className="muted">{t('station.directLink')}:</small>
-      <a href={`/s/${slug}`} target="_blank" rel="noreferrer">
+      <a href={`/${publicId}`} target="_blank" rel="noreferrer">
         <code>{url}</code>
       </a>
       <button type="button" className="btn btn-small" onClick={() => void copy()}>

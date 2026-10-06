@@ -56,11 +56,13 @@ function useOnAir(stations: Station[] | undefined): Record<string, NowOnAir> {
 export function Landing() {
   const t = useT();
   const stations = useAsync(() => api<Station[]>('/radio/stations'), [], 30_000);
-  const live = (stations.data ?? []).filter((s) => s.live);
+  const all = [...(stations.data ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || a.title.localeCompare(b.title));
+  const live = all.filter((s) => s.live);
   const now = useOnAir(stations.data ?? undefined);
   const first = live[0];
   const firstNow = first ? now[first.slug] : undefined;
-  const listenHref = first ? `/s/${first.slug}` : '/listen';
+  const hrefOf = (s: Station): string => (s.publicId ? `/${s.publicId}` : `/s/${s.slug}`);
+  const listenHref = first ? hrefOf(first) : '/listen';
 
   return (
     <div className="lp">
@@ -131,18 +133,18 @@ export function Landing() {
         <section id="stations" className="lp-section">
           <h2>{t('landing.stations.title')}</h2>
           <p className="lp-sub">{t('landing.stations.sub')}</p>
-          {live.length === 0 ? (
+          {all.length === 0 ? (
             <p className="lp-empty">{t('landing.stations.none')}</p>
           ) : (
             <ul className="lp-grid lp-stations">
-              {live.map((s) => {
+              {all.map((s) => {
                 const n = now[s.slug];
                 return (
                   <li key={s.slug}>
-                    <a className="lp-card lp-station" href={`/s/${s.slug}`}>
-                      <span className="lp-live">{t('landing.onAir')}</span>
+                    <a className={`lp-card lp-station${s.live ? '' : ' off'}`} href={hrefOf(s)}>
+                      <span className={s.live ? 'lp-live' : 'lp-live off'}>{s.live ? t('landing.onAir') : t('landing.offAir')}</span>
                       <b>{s.title}</b>
-                      <span className="lp-np">{n?.title ? `${n.title}${n.artist ? ` — ${n.artist}` : ''}` : t('landing.stations.tune')}</span>
+                      <span className="lp-np">{s.live && n?.title ? `${n.title}${n.artist ? ` — ${n.artist}` : ''}` : s.live ? t('landing.stations.tune') : t('landing.stations.soon')}</span>
                       <span className="lp-go">{t('landing.listen')} →</span>
                     </a>
                   </li>

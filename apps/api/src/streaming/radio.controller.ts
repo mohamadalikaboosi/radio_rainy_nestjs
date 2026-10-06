@@ -42,9 +42,9 @@ export class RadioController {
 
   @Get('stations')
   @Header('Cache-Control', 'no-store')
-  async list(): Promise<{ slug: string; title: string; live: boolean; transport: 'HTTP' | 'WEBSOCKET'; lowQuality: boolean }[]> {
+  async list(): Promise<{ publicId: string; slug: string; title: string; live: boolean; transport: 'HTTP' | 'WEBSOCKET'; lowQuality: boolean }[]> {
     const transports = (await this.engagement?.transports()) ?? new Map<string, 'HTTP' | 'WEBSOCKET'>();
-    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined, transport: transports.get(c.id) ?? 'HTTP', lowQuality: this.stations.get(c.id)?.low?.available ?? false }));
+    return (await this.channels.list()).filter((c) => c.started).map((c) => ({ publicId: c.publicId, slug: c.slug, title: c.title, live: this.stations.get(c.id) !== undefined, transport: transports.get(c.id) ?? 'HTTP', lowQuality: this.stations.get(c.id)?.low?.available ?? false }));
   }
 
   // ---- default station (backwards compatible URLs) ----

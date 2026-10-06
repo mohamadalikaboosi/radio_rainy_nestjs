@@ -7,7 +7,7 @@ import { Engagement } from './Engagement';
 import { LiveTarget } from './LiveTarget';
 import { Sponsors } from './Sponsors';
 
-const channel: ChannelItem = { id: '1001', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: true, telegramLiveEnabled: true, liveStatus: 'LIVE', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null };
+const channel: ChannelItem = { id: '1001', publicId: '11111111-1111-4111-8111-111111111111', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: true, telegramLiveEnabled: true, liveStatus: 'LIVE', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null };
 const calls: { url: string; method: string; body?: unknown; contentType?: string }[] = [];
 const json = (data: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => data }) as Response;
 

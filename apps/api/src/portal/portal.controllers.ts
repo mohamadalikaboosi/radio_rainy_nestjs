@@ -240,7 +240,7 @@ export class PortalController {
           [c.id],
         );
         const row = s.rows[0];
-        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: Number(row?.plays ?? 0), peakListeners24h: row?.peak ?? 0, avgListeners24h: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
+        return { id: c.id, publicId: c.publicId, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: Number(row?.plays ?? 0), peakListeners24h: row?.peak ?? 0, avgListeners24h: Math.round(Number(row?.avg ?? 0) * 10) / 10 };
       }),
     );
   }

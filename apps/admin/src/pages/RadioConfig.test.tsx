@@ -20,7 +20,7 @@ function mockApi(handlers: Record<string, (init: RequestInit) => unknown>) {
   });
 }
 
-const channel: ChannelItem = { id: '1001', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null };
+const channel: ChannelItem = { id: '1001', publicId: '11111111-1111-4111-8111-111111111111', reference: '@chan', title: 'Chan', username: 'chan', slug: 'chan', started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null };
 const withChannel = (ui: React.ReactElement) => (
   <MemoryRouter>
     <ChannelContext.Provider value={{ channels: [channel], selected: channel, loading: false, select: () => undefined, reload: () => undefined }}>{ui}</ChannelContext.Provider>

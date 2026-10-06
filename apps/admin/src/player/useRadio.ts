@@ -7,6 +7,8 @@ import { voterId } from './helpers';
 import { useRealtime } from './useRealtime';
 
 export interface Station {
+  /** Permanent UUID address of the station (set at creation, never changes): its own page is /<publicId>. */
+  publicId?: string;
   slug: string;
   title: string;
   live: boolean;

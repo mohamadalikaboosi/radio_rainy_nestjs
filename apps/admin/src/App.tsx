@@ -23,6 +23,7 @@ import { Live } from './pages/Live';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
 import { Landing } from './landing/Landing';
+import { StationPage } from './player/StationPage';
 import { RadioConfig } from './pages/RadioConfig';
 import { Reports } from './pages/Reports';
 import { Rules } from './pages/Rules';
@@ -203,8 +204,8 @@ function Panel() {
   );
 }
 
-/** Direct link of one station: /s/<slug>. Plays only that station. */
-function StationPage() {
+/** Older link of one station: /s/<slug> (still works). */
+function StationBySlug() {
   const { slug } = useParams();
   return <Player key={slug} lockedSlug={slug ?? ''} />;
 }
@@ -216,9 +217,10 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/listen" element={<Player />} />
-        <Route path="/s/:slug" element={<StationPage />} />
+        <Route path="/s/:slug" element={<StationBySlug />} />
         <Route path="/panel/*" element={<Panel />} />
         <Route path="/partner/*" element={<PortalApp />} />
+        <Route path="/:publicId" element={<StationPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
