@@ -133,7 +133,7 @@ describe('TelegramLiveStreamer', () => {
 
   it('a connection too slow for real time lowers the quality and restarts WITHOUT an error or a back-off; later attempts use the new level', async () => {
     const levels: string[] = [];
-    const quality = new LiveQualityController(LIVE_LADDER, { ...DEFAULT_ADAPT, windowMs: 50, cooldownMs: 0, slowSpeed: 0.9 });
+    const quality = new LiveQualityController(LIVE_LADDER, { ...DEFAULT_ADAPT, sustainMs: 30, cooldownMs: 0, slowSpeed: 0.9 });
     const { streamer, statuses } = setup(async (_t, _i, signal, hooks, q) => {
       levels.push(q?.name ?? '?');
       hooks?.onActive?.();

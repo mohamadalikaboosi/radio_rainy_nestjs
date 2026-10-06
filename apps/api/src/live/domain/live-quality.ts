@@ -17,11 +17,16 @@ export const LIVE_LADDER: readonly LiveQuality[] = [
 ];
 
 export interface AdaptOptions {
-  /** Average encoding speed below this over `windowMs` means the uplink cannot keep up (1.0 = exactly real time). */
+  /** A measured speed below this (1.0 = exactly real time) means the uplink cannot keep up. */
   slowSpeed: number;
-  windowMs: number;
+  /** ...and it must stay below for this long before anything is done (a restart is itself a cut in the stream). */
+  sustainMs: number;
   /** A level is only changed this long after the previous change. */
   cooldownMs: number;
+  /** Below this the stream is clearly starving: further steps down are allowed right after the cooldown. */
+  starvedSpeed: number;
+  /** A second step down for a merely "slow" (not starving) stream needs this long since the last change: if lowering the bitrate did not help, the bottleneck is not the bitrate. */
+  repeatDownAfterMs: number;
   /** First time: this long of a healthy stream before trying a better level again. Doubles each time the better level failed quickly. */
   upAfterMs: number;
   maxUpAfterMs: number;
@@ -30,20 +35,55 @@ export interface AdaptOptions {
   crashesToDegrade: number;
 }
 
-export const DEFAULT_ADAPT: AdaptOptions = { slowSpeed: 0.92, windowMs: 10_000, cooldownMs: 20_000, upAfterMs: 120_000, maxUpAfterMs: 15 * 60_000, crashWindowMs: 90_000, crashesToDegrade: 2 };
+export const DEFAULT_ADAPT: AdaptOptions = {
+  slowSpeed: 0.85,
+  sustainMs: 15_000,
+  cooldownMs: 60_000,
+  starvedSpeed: 0.6,
+  repeatDownAfterMs: 5 * 60_000,
+  upAfterMs: 120_000,
+  maxUpAfterMs: 15 * 60_000,
+  crashWindowMs: 90_000,
+  crashesToDegrade: 2,
+};
+
+/**
+ * The CURRENT encoding speed of ffmpeg from its progress output: media time produced / wall time that passed, over a sliding window.
+ * (ffmpeg's own `speed=` is an average since the process started, so the connect/probe delay of the first seconds drags it below 1.0 for a
+ * minute even on a perfect link: acting on it restarts a healthy stream again and again.) Nothing is reported during the warm-up.
+ */
+export class SpeedMeter {
+  private points: { wall: number; out: number }[] = [];
+  private t0: number | null = null;
+
+  constructor(private readonly windowMs = 12_000, private readonly warmupMs = 10_000) {}
+
+  /** `outUs` = ffmpeg's `out_time_us` (media microseconds written so far). Returns the speed over the window, or null while warming up. */
+  add(wallMs: number, outUs: number): number | null {
+    this.t0 ??= wallMs;
+    if (wallMs - this.t0 < this.warmupMs) return null; // connecting / probing: not part of the measurement at all
+    this.points = [...this.points.filter((p) => wallMs - p.wall <= this.windowMs), { wall: wallMs, out: outUs }];
+    const first = this.points[0];
+    const last = this.points[this.points.length - 1];
+    if (!first || !last) return null;
+    const dw = last.wall - first.wall;
+    if (dw < this.windowMs * 0.6) return null;
+    return (last.out - first.out) / 1000 / dw;
+  }
+}
 
 export type Decision = 'down' | 'up' | null;
 
 /**
- * Picks the quality like a video player would, but on the sending side: it watches how fast ffmpeg manages to push the stream
- * (`speed` of ffmpeg's progress: 1.0x = real time) and steps down when it falls behind or the connection keeps dropping, and
- * carefully tries a better level again after a long healthy period. Pure (time is passed in), so it is unit-tested.
+ * Picks the quality like a video player would, but on the sending side: it watches how fast ffmpeg manages to push the stream and steps down
+ * when it SUSTAINABLY falls behind or the connection keeps dropping, and carefully tries a better level again after a long healthy period.
+ * Conservative on purpose: every change restarts ffmpeg, which is a cut for the viewers. Pure (time is passed in), so it is unit-tested.
  */
 export class LiveQualityController {
   private idx = 0;
-  private samples: { at: number; speed: number }[] = [];
   private crashes: number[] = [];
   private lastChange = -Infinity;
+  private belowSince: number | null = null;
   private healthySince: number | null = null;
   private upAfter: number;
   private lastUpAt = -Infinity;
@@ -61,19 +101,29 @@ export class LiveQualityController {
     return this.idx;
   }
 
-  /** A new ffmpeg process started: speed history of the previous one is meaningless. */
+  /** A new ffmpeg process started: the history of the previous one is meaningless. */
   attemptStarted(now: number): void {
-    this.samples = [];
-    this.healthySince = now;
+    this.belowSince = null;
+    this.healthySince = null;
+    void now;
   }
 
+  /** `speed` is the CURRENT speed (see SpeedMeter), never ffmpeg's cumulative one. */
   observe(speed: number, now: number): Decision {
     if (!Number.isFinite(speed) || speed <= 0) return null;
-    this.samples = [...this.samples.filter((s) => now - s.at <= this.opt.windowMs), { at: now, speed }];
-    const span = now - (this.samples[0]?.at ?? now);
-    const avg = this.samples.reduce((a, s) => a + s.speed, 0) / this.samples.length;
-    if (span >= this.opt.windowMs * 0.8 && avg < this.opt.slowSpeed) return this.down(now);
-    if (avg >= 0.98 && this.healthySince !== null && now - this.healthySince >= this.upAfter) return this.up(now);
+    if (speed < this.opt.slowSpeed) {
+      this.healthySince = null;
+      this.belowSince ??= now;
+      if (now - this.belowSince >= this.opt.sustainMs) return this.down(now, speed);
+      return null;
+    }
+    this.belowSince = null;
+    if (speed >= 0.97) {
+      this.healthySince ??= now;
+      if (now - this.healthySince >= this.upAfter) return this.up(now);
+    } else {
+      this.healthySince = null;
+    }
     return null;
   }
 
@@ -81,22 +131,28 @@ export class LiveQualityController {
   crashed(now: number): Decision {
     this.crashes = [...this.crashes.filter((t) => now - t <= this.opt.crashWindowMs), now];
     this.healthySince = null;
+    this.belowSince = null;
     if (this.crashes.length >= this.opt.crashesToDegrade) {
       this.crashes = [];
-      return this.down(now, true);
+      return this.down(now, 0, true);
     }
     return null;
   }
 
-  private down(now: number, force = false): Decision {
+  private down(now: number, speed: number, force = false): Decision {
     if (this.idx >= this.ladder.length - 1) return null;
-    if (!force && now - this.lastChange < this.opt.cooldownMs) return null;
+    const since = now - this.lastChange;
+    if (!force) {
+      if (since < this.opt.cooldownMs) return null;
+      // slow but not starving, and lowering the bitrate a moment ago did not fix it: the bottleneck is elsewhere, stop restarting
+      if (speed >= this.opt.starvedSpeed && since < this.opt.repeatDownAfterMs && this.lastChange > -Infinity) return null;
+    }
     // the better level we just left failed soon after we tried it: wait longer before trying again
     if (now - this.lastUpAt < this.upAfter) this.upAfter = Math.min(this.opt.maxUpAfterMs, this.upAfter * 2);
     this.idx++;
     this.lastChange = now;
-    this.samples = [];
-    this.healthySince = now;
+    this.belowSince = null;
+    this.healthySince = null;
     return 'down';
   }
 
@@ -105,8 +161,8 @@ export class LiveQualityController {
     this.idx--;
     this.lastChange = now;
     this.lastUpAt = now;
-    this.samples = [];
-    this.healthySince = now;
+    this.belowSince = null;
+    this.healthySince = null;
     return 'up';
   }
 }
