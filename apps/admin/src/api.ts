@@ -178,6 +178,7 @@ export interface PreviewResult {
 }
 export interface ChannelItem {
   id: string;
+  publicId: string;
   reference: string;
   title: string;
   username: string | null;
@@ -361,6 +362,7 @@ export interface PortalMe {
 }
 export interface MyStation {
   id: string;
+  publicId: string;
   slug: string;
   title: string;
   started: boolean;

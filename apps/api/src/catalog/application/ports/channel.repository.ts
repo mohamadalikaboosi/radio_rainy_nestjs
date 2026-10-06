@@ -3,6 +3,8 @@ export type LiveStatus = 'OFF' | 'STARTING' | 'LIVE' | 'ERROR';
 /** One Telegram channel = one radio station. `id` is the Telegram channel id (string) used everywhere as the station key. */
 export interface ChannelRow {
   id: string;
+  /** Permanent public address of the station (UUID, set at creation, never changes): the station's own page is /<publicId>. */
+  publicId: string;
   reference: string;
   title: string;
   username: string | null;

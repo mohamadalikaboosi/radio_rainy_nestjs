@@ -29,7 +29,7 @@ export function PortalStations() {
           <p>
             <code>/radio/{s.slug}/stream</code>
           </p>
-          <DirectLink slug={s.slug} />
+          <DirectLink publicId={s.publicId} />
           <button className="btn btn-small" onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
             {t('portal.settings')}
           </button>

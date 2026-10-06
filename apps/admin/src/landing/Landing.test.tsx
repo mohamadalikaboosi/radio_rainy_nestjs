@@ -9,8 +9,8 @@ describe('<Landing />', () => {
   let stations: unknown[];
   beforeEach(() => {
     stations = [
-      { slug: 'alpha', title: 'Alpha FM', live: true },
-      { slug: 'beta', title: 'Beta FM', live: false },
+      { publicId: '0a1b2c3d-0000-4000-8000-00000000000a', slug: 'alpha', title: 'Alpha FM', live: true },
+      { publicId: '0a1b2c3d-0000-4000-8000-00000000000b', slug: 'beta', title: 'Beta FM', live: false },
     ];
     vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
       const url = String(input).split('?')[0] ?? '';
@@ -30,13 +30,14 @@ describe('<Landing />', () => {
     for (const f of ['Truly live', 'Live inside Telegram', 'Synchronized lyrics', 'Data saver']) expect(screen.getByText(f)).toBeInTheDocument();
   });
 
-  it('lists only stations that are on air, with what they play now, and "Listen live" opens the first one', async () => {
+  it('lists every station (on-air first, with what plays now), links to its permanent UUID page, and "Listen live" opens the first on-air one', async () => {
     wrap();
     expect(await screen.findByText('Alpha FM')).toBeInTheDocument();
-    expect(screen.queryByText('Beta FM')).toBeNull();
+    expect(screen.getByText('Beta FM')).toBeInTheDocument(); // off air, still listed
     expect(await screen.findByText('Hamkharabeh — Sadegh')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Alpha FM/ })).toHaveAttribute('href', '/s/alpha');
-    await waitFor(() => expect(screen.getAllByRole('link', { name: /listen live/i })[0]).toHaveAttribute('href', '/s/alpha'));
+    expect(screen.getByRole('link', { name: /Alpha FM/ })).toHaveAttribute('href', '/0a1b2c3d-0000-4000-8000-00000000000a');
+    expect(screen.getByRole('link', { name: /Beta FM/ })).toHaveAttribute('href', '/0a1b2c3d-0000-4000-8000-00000000000b');
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /listen live/i })[0]).toHaveAttribute('href', '/0a1b2c3d-0000-4000-8000-00000000000a'));
   });
 
   it('with nothing on air it says so and "Listen live" goes to the player', async () => {

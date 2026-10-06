@@ -10,14 +10,17 @@ describe('buildFfmpegRtmpArgs', () => {
     const args = buildFfmpegRtmpArgs({ url: 'rtmps://dc5-1.rtmp.t.me:443/s/', key: 'abc-123' }, LIVE_LADDER[0]);
     expect(args.at(-1)).toBe('rtmps://dc5-1.rtmp.t.me:443/s/abc-123');
     expect(args).toEqual(expect.arrayContaining(['-f', 'mp3', '-i', 'pipe:0', '-c:a', 'aac', '-ar', '48000', '-f', 'flv']));
-    expect(args).toEqual(expect.arrayContaining(['-b:a', '128k', '-b:v', '500k']));
+    expect(args).toEqual(expect.arrayContaining(['-b:a', '128k', '-b:v', '300k']));
     // a lower rung shrinks both the audio and the picture
-    const low = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[2], undefined);
+    const low = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[2]);
     expect(low).toEqual(expect.arrayContaining(['-b:a', '64k', '-b:v', '120k']));
     expect(low[low.indexOf('-vf') + 1]).toContain('scale=640:360');
     // the picture comes from a PNG that ffmpeg re-reads for every frame (so an ad banner can replace it live)
-    const withSlide = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[0], undefined, '/tmp/slide.png');
+    const withSlide = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[0], '/tmp/slide.png');
     expect(withSlide.slice(withSlide.indexOf('image2') - 1, withSlide.indexOf('image2') + 7)).toEqual(['-f', 'image2', '-loop', '1', '-framerate', '5', '-i', '/tmp/slide.png']);
+    // the live encoder does no text rendering at all and is cheap: still-image tune, few frames per second, limited threads, silence instead of gaps
+    expect(withSlide.join(' ')).not.toContain('drawtext');
+    expect(withSlide).toEqual(expect.arrayContaining(['-tune', 'stillimage,zerolatency', '-threads', '2', '-af', 'aresample=async=1:first_pts=0']));
     // url without trailing slash still joins correctly
     expect(buildFfmpegRtmpArgs({ url: 'rtmps://x/s', key: 'k' }).at(-1)).toBe('rtmps://x/s/k');
   });

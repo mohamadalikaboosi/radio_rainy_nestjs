@@ -494,4 +494,21 @@ CREATE TABLE admin_users (
 CREATE UNIQUE INDEX admin_users_username_idx ON admin_users (lower(username));
 `,
   },
+  {
+    id: '009_channel_public_id',
+    sql: `
+-- A permanent public address of a station (localhost/<public_id>). Created with the station, never changes: it is what the station's own page is locked to.
+ALTER TABLE channels ADD COLUMN public_id UUID NOT NULL DEFAULT gen_random_uuid();
+CREATE UNIQUE INDEX channels_public_id_idx ON channels (public_id);
+CREATE FUNCTION channels_public_id_immutable() RETURNS trigger AS $$
+BEGIN
+  IF NEW.public_id IS DISTINCT FROM OLD.public_id THEN
+    RAISE EXCEPTION 'channels.public_id is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER channels_public_id_immutable BEFORE UPDATE ON channels FOR EACH ROW EXECUTE FUNCTION channels_public_id_immutable();
+`,
+  },
 ];

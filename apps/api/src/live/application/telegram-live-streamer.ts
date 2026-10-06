@@ -81,6 +81,7 @@ export class TelegramLiveStreamer {
         let active = false;
         let hung = false;
         let adapting: Decision = null;
+        let lastSpeedLog = 0;
         const q = this.quality.quality;
         this.quality.attemptStarted(Date.now());
         const watchdog = setTimeout(() => {
@@ -98,6 +99,10 @@ export class TelegramLiveStreamer {
           },
           onLog: (line) => this.logger.warn({ msg: 'ffmpeg', channelId: this.channelId, line }),
           onSpeed: (speed) => {
+            if (Date.now() - lastSpeedLog > 30_000) {
+              lastSpeedLog = Date.now();
+              this.logger.log({ msg: 'telegram live: encoder speed', channelId: this.channelId, speed, quality: this.quality.quality.name });
+            }
             if (adapting || signal.aborted) return;
             const d = this.quality.observe(speed, Date.now());
             if (!d) return;

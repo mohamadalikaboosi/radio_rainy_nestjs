@@ -235,7 +235,7 @@ export class PortalController {
     return Promise.all(
       owned.map(async (c) => {
         const a = await this.history.stationActivity(c.id);
-        return { id: c.id, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: a.plays, peakListeners24h: a.peakListeners, avgListeners24h: a.avgListeners };
+        return { id: c.id, publicId: c.publicId, slug: c.slug, title: c.title, started: c.started, listenersNow: listenersOf(this.stations.get(c.id)), plays24h: a.plays, peakListeners24h: a.peakListeners, avgListeners24h: a.avgListeners };
       }),
     );
   }

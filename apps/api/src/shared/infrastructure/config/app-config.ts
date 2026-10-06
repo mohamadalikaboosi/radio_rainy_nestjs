@@ -53,6 +53,8 @@ export const envSchema = z.object({
   AUDIO_CACHE_DIR: z.string().optional(),
   AUDIO_CACHE_MAX_MB: z.coerce.number().int().min(0).default(1024),
   /** Bytes per Telegram download request (KiB): a download is one request after another, so bigger = faster. */
+  /** The song/ad text on the Telegram live video changes this long after the engine switched, to match what is heard there (prebuffer + encoder queue). */
+  TELEGRAM_LIVE_TEXT_DELAY_SECONDS: z.coerce.number().min(0).max(60).default(3),
   TELEGRAM_DOWNLOAD_REQUEST_KB: z.coerce.number().int().refine((n) => [64, 128, 256, 512, 1024].includes(n), 'must be 64, 128, 256, 512 or 1024').default(512),
   AUDIO_CACHE_CONCURRENT_FILLS: z.coerce.number().int().min(1).max(8).default(2),
   /** Enables GET /metrics (Prometheus text) for `Authorization: Bearer <token>`. Unset = endpoint disabled. */

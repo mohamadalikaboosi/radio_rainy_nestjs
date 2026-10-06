@@ -5,6 +5,7 @@ import { ChannelDirectory } from '../../application/ports/telegram.types';
 
 interface Row {
   telegram_channel_id: string;
+  public_id: string;
   reference: string;
   title: string;
   username: string | null;
@@ -20,9 +21,10 @@ interface Row {
   created_at: Date;
 }
 
-const COLS = 'telegram_channel_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, live_rtmp_url, (live_rtmp_key_enc IS NOT NULL) AS live_rtmp_key_set, live_target_rev, owner_account_id, created_at';
+const COLS = 'telegram_channel_id, public_id, reference, title, username, slug, started, telegram_live_enabled, live_status, live_error, live_rtmp_url, (live_rtmp_key_enc IS NOT NULL) AS live_rtmp_key_set, live_target_rev, owner_account_id, created_at';
 const map = (r: Row): ChannelRow => ({
   id: r.telegram_channel_id,
+  publicId: r.public_id,
   reference: r.reference,
   title: r.title,
   username: r.username,

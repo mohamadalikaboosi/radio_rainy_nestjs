@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { lowerPriority } from '../../shared/infrastructure/process-priority';
 import { TranscriptionError } from '../domain/transcription.errors';
 
 export interface PreprocessOptions {
@@ -20,6 +21,7 @@ export class FfmpegPreprocessor implements AudioPreprocessor {
         stdio: ['ignore', 'ignore', 'pipe'],
         signal,
       });
+      lowerPriority(proc, 15); // batch work for Whisper: never at the expense of the radio
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => {
         stderr = (stderr + d.toString()).slice(-2000);

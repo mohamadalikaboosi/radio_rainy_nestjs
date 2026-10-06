@@ -305,6 +305,26 @@ describe('Super Admin API (e2e)', () => {
       expect(JSON.stringify((await http().get('/radio/stations')).body)).not.toMatch(/2002|reference|telegram/i);
     });
 
+    it('every station has a permanent public UUID address: exposed by the public list, never changes, cannot be updated even by SQL', async () => {
+      await http().post(`/admin/channels/${second}/start`).set(auth()).expect(200);
+      const list = (await http().get('/radio/stations')).body as { publicId: string; slug: string }[];
+      const mine = list.find((x) => x.slug === 'second');
+      expect(mine?.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      const row = await db.query<{ public_id: string }>(`SELECT public_id FROM channels WHERE telegram_channel_id = 2002`);
+      expect(row.rows[0]?.public_id).toBe(mine?.publicId);
+      // restarting / retitling does not change it
+      await http().post(`/admin/channels/${second}/stop`).set(auth()).expect(200);
+      await http().post(`/admin/channels/${second}/start`).set(auth()).expect(200);
+      const again = (await http().get('/radio/stations')).body as { publicId: string; slug: string }[];
+      expect(again.find((x) => x.slug === 'second')?.publicId).toBe(mine?.publicId);
+      // the database itself refuses to change it
+      await expect(db.query(`UPDATE channels SET public_id = gen_random_uuid() WHERE telegram_channel_id = 2002`)).rejects.toThrow(/immutable/);
+      await db.query(`UPDATE channels SET title = 'Renamed' WHERE telegram_channel_id = 2002`); // other columns stay editable
+      // two stations never share one
+      const ids = (await db.query<{ public_id: string }>('SELECT public_id FROM channels')).rows.map((r) => r.public_id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
     it('Telegram live stream toggle: reported per channel (ffmpeg missing/unreachable => ERROR with reason), off again', async () => {
       const on = (await http().put(`/admin/channels/${second}/live`).set(auth()).send({ enabled: true }).expect(200)).body;
       expect(on.telegramLiveEnabled).toBe(true);

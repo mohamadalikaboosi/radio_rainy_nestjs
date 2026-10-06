@@ -2,7 +2,7 @@ import { ChannelRow } from '../../catalog/application/ports/channel.repository';
 import { Broadcaster } from '../domain/broadcaster';
 import { Station, StationManager } from './station-manager';
 
-const row = (id: string, over: Partial<ChannelRow> = {}): ChannelRow => ({
+const row = (id: string, over: Partial<ChannelRow> = {}): ChannelRow => ({ publicId: '00000000-0000-4000-8000-0000000000' + id.padStart(2, '0').slice(-2),
   id, reference: `@c${id}`, title: `C${id}`, username: null, slug: `c${id}`, started: true, telegramLiveEnabled: false, liveStatus: 'OFF', liveError: null, liveRtmpUrl: null, liveRtmpKeySet: false, liveTargetRev: 0, ownerAccountId: null, createdAt: new Date(), ...over,
 });
 
