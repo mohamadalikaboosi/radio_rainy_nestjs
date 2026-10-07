@@ -18,6 +18,27 @@ import {
  */
 export const DEFAULT_DOWNLOAD_REQUEST_KB = 512;
 
+/** The document reference the sync stored for a track (`TelegramAudioMessage.audio.fileReference`) and its size. */
+export type StoredFileLookup = (channelId: string, messageId: number) => Promise<{ fileReference: string; fileSize: number | null } | null>;
+
+/** Rebuilds the download location from a stored reference (see `toAudioMessage`); null when it is missing or malformed. */
+export function storedDocumentLocation(serialized: string, fileSize: number | null): { location: Api.InputDocumentFileLocation; dcId: number; size?: bigInt.BigInteger } | null {
+  let r: { id?: unknown; accessHash?: unknown; dcId?: unknown; fileReference?: unknown };
+  try {
+    r = JSON.parse(serialized) as typeof r;
+  } catch {
+    return null;
+  }
+  if (typeof r.id !== 'string' || typeof r.accessHash !== 'string' || typeof r.dcId !== 'number' || typeof r.fileReference !== 'string') return null;
+  return {
+    location: new Api.InputDocumentFileLocation({ id: bigInt(r.id), accessHash: bigInt(r.accessHash), fileReference: Buffer.from(r.fileReference, 'base64'), thumbSize: '' }),
+    dcId: r.dcId,
+    size: fileSize ? bigInt(fileSize) : undefined,
+  };
+}
+
+const isFileReferenceError = (err: unknown): boolean => err instanceof Error && /FILE_REFERENCE_/.test(err.message);
+
 /** Converts a raw MTProto message into our neutral type. Returns null for non-audio (voice notes, video, text...). */
 export function toAudioMessage(msg: Api.Message, channelId: string, username?: string): TelegramAudioMessage | null {
   const media = msg.media;
@@ -73,6 +94,7 @@ export class GramJsTelegramGateway implements TelegramGateway {
     private readonly manager: TelegramClientManager,
     private readonly directory: ChannelDirectory,
     private readonly requestKb: number = DEFAULT_DOWNLOAD_REQUEST_KB,
+    private readonly storedFile?: StoredFileLookup,
   ) {}
 
   async resolveChannel(reference: string): Promise<TelegramChannelInfo> {
@@ -149,24 +171,63 @@ export class GramJsTelegramGateway implements TelegramGateway {
   }
 
   /**
-   * Streams the file in small chunks. The message is re-fetched right before download so the file reference
-   * is always fresh (expired references are the classic MTProto download failure).
+   * Streams the file in small chunks. It starts from the document reference the sync stored, which costs no API call: re-fetching the message
+   * before every download (channels.getMessages) put playback behind the same flood wait as the sync. Only when that reference has expired
+   * (FILE_REFERENCE_EXPIRED, the classic MTProto download failure) is the message fetched for a fresh one.
    */
   async *download(channelId: string, messageId: number, opts: { offset?: number; signal?: AbortSignal } = {}): AsyncIterable<Uint8Array> {
     const { entity } = await this.entityOf(channelId);
     const client: TelegramClient = this.manager.getClient();
+    const stored = await this.storedLocation(channelId, messageId);
+    if (stored) {
+      let received = false;
+      try {
+        for await (const chunk of this.chunks(client, stored.location, entity, messageId, opts, stored.dcId, stored.size)) {
+          received = true;
+          yield chunk;
+        }
+        return;
+      } catch (err) {
+        if (received || !isFileReferenceError(err)) throw err;
+        this.logger.log({ msg: 'stored file reference expired; fetching the message for a fresh one', channelId, messageId });
+      }
+    }
     const message = await this.fetchRaw(channelId, messageId);
     if (!message || !message.media) throw new TelegramMediaError(`Message ${messageId} not found or has no media`, false);
+    yield* this.chunks(client, message.media, entity, messageId, opts);
+  }
 
+  private async storedLocation(channelId: string, messageId: number): Promise<ReturnType<typeof storedDocumentLocation>> {
+    if (!this.storedFile) return null;
+    try {
+      const id = await this.storedFile(channelId, messageId);
+      return id ? storedDocumentLocation(id.fileReference, id.fileSize) : null;
+    } catch (err) {
+      this.logger.warn({ msg: 'stored file reference lookup failed; fetching the message', messageId, err: String(err) });
+      return null;
+    }
+  }
+
+  private async *chunks(
+    client: TelegramClient,
+    file: Api.TypeMessageMedia | Api.TypeInputFileLocation,
+    entity: Api.Channel,
+    messageId: number,
+    opts: { offset?: number; signal?: AbortSignal },
+    dcId?: number,
+    fileSize?: bigInt.BigInteger,
+  ): AsyncGenerator<Uint8Array> {
     // Telegram wants the offset to be a multiple of the request size: start at the block boundary and drop the bytes already received
     const requestSize = this.requestKb * 1024;
     const wanted = opts.offset ?? 0;
     const start = Math.floor(wanted / requestSize) * requestSize;
     let skip = wanted - start;
     const iter = client.iterDownload({
-      file: message.media,
+      file,
       offset: bigInt(start),
       requestSize,
+      dcId,
+      fileSize,
       msgData: [entity, messageId],
     });
     try {

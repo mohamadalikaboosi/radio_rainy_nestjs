@@ -6,6 +6,7 @@ import { StationMetrics } from './radio-metrics';
 import { TelegramTrackDiscovery } from '../../catalog/application/track-discovery';
 import { PgTrackRepository } from '../../catalog/infrastructure/persistence/track.repository';
 import { PlaybackEvent } from './playback-engine';
+import { id3Tag, mp3Cbr } from '../../../test/mp3';
 
 /** A valid-looking MPEG frame header followed by `fill` so the corruption check accepts it. 1 s = 20000 B. */
 const audio = (fill: number): Buffer => Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x00]), Buffer.alloc(19996, fill)]);
@@ -163,6 +164,30 @@ describe('PlaybackEngine prefetch, fail-over, state and metrics', () => {
     h.engine.start();
     await waitFor(() => metrics.underruns >= 1);
     expect(metrics.underruns).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a 320 kbps MP3 with cover art goes on air in real time (paced as 128 kbps it played at 0.4x and starved every listener)', async () => {
+    const file = Buffer.concat([id3Tag(58_000), mp3Cbr(320, 6)]); // the metadata reads 397 kbps
+    gw.add(audioMsg(1, 'Ebi - Derakht', { size: file.length, duration: 6 }), [file]);
+    await discovery.sync('1001');
+    boot();
+    let rate = 0;
+    const at: { start?: number; end?: number } = {};
+    h.engine.subscribe((e) => {
+      if (e.type === 'track-started' && at.start === undefined) {
+        at.start = h.clock.t;
+        rate = h.engine.current?.bytesPerSec ?? -1;
+      }
+      if (e.type === 'track-ended' && at.end === undefined) at.end = h.clock.t;
+    });
+    listen();
+    h.engine.start();
+    await waitFor(() => at.end !== undefined);
+    expect(rate).toBe(40_000);
+    // 6 s of audio minus the 2 s burst ahead of real time; at 128 kbps it would have taken ~13 s
+    const onAir = (at.end ?? 0) - (at.start ?? 0);
+    expect(onAir).toBeGreaterThan(3500);
+    expect(onAir).toBeLessThan(4500);
   });
 
   it('getState() derives the position from the canonical clock, never from a per-listener counter', async () => {

@@ -89,8 +89,8 @@ void main() {
     return StationController(api: api, address: address, slug: 'a', player: player, settings: settings, realtime: (a, s) => RealtimeClient(a, s, connector: (_) => FakeSocket()), now: () => now ?? DateTime.utc(2026, 1, 1, 12, 0, 12));
   }
 
-  testWidgets('player: shows the song, the lyrics (synced), the vote and the sponsor; play button starts the stream', (tester) async {
-    tester.view.physicalSize = const Size(800, 3000); // tall enough to build the whole (lazy) list
+  testWidgets('player: shows the song, the lyrics (synced, karaoke row), the vote and the sponsor; play button starts the stream', (tester) async {
+    tester.view.physicalSize = const Size(1000, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final player = FakePlayer();
@@ -100,14 +100,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('Song One'), findsOneWidget);
     expect(find.text('Sadegh'), findsOneWidget);
+    expect(find.text('ON AIR'), findsOneWidget);
+    expect(find.text('NOW PLAYING'), findsOneWidget);
+    expect(find.text('Song One — Sadegh'), findsOneWidget); // lyrics card header
     expect(find.text('the line being sung'), findsOneWidget);
+    expect(find.text('• • •'), findsNWidgets(3)); // intro, the 10 s between the lines, the rest of the song
     expect(find.text('Shop'), findsOneWidget);
+    expect(find.text('What plays next?'), findsOneWidget);
     expect(find.text('#rock'), findsOneWidget);
+    expect(find.text('100% · 2 votes'), findsOneWidget);
     expect(find.byTooltip('Quality'), findsOneWidget); // the station offers the data saver
+    expect(find.byType(Slider), findsOneWidget); // desktop: volume
 
-    await tester.tap(find.byType(FilledButton).first);
+    await tester.tap(find.byKey(const Key('play')));
     await tester.pump();
     expect(player.played, hasLength(1));
+    expect(find.text('Pause'), findsOneWidget);
+    c.dispose();
+  });
+
+  testWidgets('player on a phone: settings behind "⋯", no volume slider (hardware buttons), the Lyrics button hides the card', (tester) async {
+    tester.view.physicalSize = const Size(390, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final c = await station(FakePlayer());
+    await c.start();
+    await tester.pumpWidget(app(PlayerScreen(controller: c)));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byTooltip('Menu'), findsOneWidget);
+    expect(find.byTooltip('Quality'), findsNothing);
+    expect(find.byType(Slider), findsNothing);
+    expect(find.text('the line being sung'), findsOneWidget);
+    await tester.tap(find.text('Lyrics').first);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('the line being sung'), findsNothing);
+    expect(c.showLyrics, isFalse);
     c.dispose();
   });
 

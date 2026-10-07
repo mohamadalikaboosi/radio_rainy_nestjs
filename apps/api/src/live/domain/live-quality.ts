@@ -1,3 +1,5 @@
+import { Mp3FrameCounter } from '../../engagement/domain/mp3-info';
+
 /** One rung of the Telegram live quality ladder (what ffmpeg encodes and sends up). */
 export interface LiveQuality {
   name: 'high' | 'medium' | 'low' | 'minimum';
@@ -72,6 +74,43 @@ export class SpeedMeter {
   }
 }
 
+/**
+ * How fast the RADIO feeds the live encoder: media seconds of MP3 received per wall second over a sliding window (1.0 = real time), counted
+ * from the frames themselves, so it is right for any bitrate. The encoder can never be faster than its input: while this is low (the radio
+ * stalled between tracks, a download fell behind...), a low encoder speed is the source's fault and says nothing about the uplink.
+ */
+export class SourceRate {
+  private readonly frames = new Mp3FrameCounter();
+  private points: { wall: number; media: number }[] = [];
+  private firstAt: number | null = null;
+
+  constructor(private readonly windowMs = 12_000) {}
+
+  fed(chunk: Uint8Array, wallMs: number): void {
+    this.firstAt ??= wallMs;
+    this.frames.push(chunk);
+    this.points.push({ wall: wallMs, media: this.frames.seconds });
+    // keep the newest point at or before the window start (the baseline) and everything after it
+    const from = wallMs - this.windowMs;
+    while (this.points.length > 1 && (this.points[1]?.wall ?? Infinity) <= from) this.points.shift();
+  }
+
+  /** Real-time ratio over the last window, or null until a whole window has been observed. Silence (nothing fed) counts as 0. */
+  ratio(wallMs: number): number | null {
+    const from = wallMs - this.windowMs;
+    if (this.firstAt === null || this.firstAt > from) return null;
+    const mediaAt = (t: number): number => {
+      let media = 0;
+      for (const p of this.points) {
+        if (p.wall > t) break;
+        media = p.media;
+      }
+      return media;
+    };
+    return (mediaAt(wallMs) - mediaAt(from)) / (this.windowMs / 1000);
+  }
+}
+
 export type Decision = 'down' | 'up' | null;
 
 /**
@@ -108,9 +147,22 @@ export class LiveQualityController {
     void now;
   }
 
-  /** `speed` is the CURRENT speed (see SpeedMeter), never ffmpeg's cumulative one. */
-  observe(speed: number, now: number): Decision {
+  /** The radio itself delivered less than real time: nothing can be learned about the uplink right now. */
+  private sourceStarved(sourceRate: number | null): boolean {
+    if (sourceRate === null || sourceRate >= this.opt.slowSpeed) return false;
+    this.belowSince = null;
+    this.healthySince = null;
+    return true;
+  }
+
+  /**
+   * `speed` is the CURRENT speed (see SpeedMeter), never ffmpeg's cumulative one. `sourceRate` is how fast the radio fed the encoder over
+   * the same time (see SourceRate; null = unknown): an encoder starved by its input is not a slow connection, and restarting it at a lower
+   * quality would only add a cut.
+   */
+  observe(speed: number, now: number, sourceRate: number | null = null): Decision {
     if (!Number.isFinite(speed) || speed <= 0) return null;
+    if (this.sourceStarved(sourceRate)) return null;
     if (speed < this.opt.slowSpeed) {
       this.healthySince = null;
       this.belowSince ??= now;
@@ -127,8 +179,12 @@ export class LiveQualityController {
     return null;
   }
 
-  /** ffmpeg exited by itself (not because we changed the level). Repeated drops step the quality down. */
-  crashed(now: number): Decision {
+  /**
+   * ffmpeg exited by itself (not because we changed the level). Repeated drops step the quality down, except a drop while the radio itself
+   * was not feeding it (Telegram closes a live stream that receives nothing): that is not the connection's fault.
+   */
+  crashed(now: number, sourceRate: number | null = null): Decision {
+    if (this.sourceStarved(sourceRate)) return null;
     this.crashes = [...this.crashes.filter((t) => now - t <= this.opt.crashWindowMs), now];
     this.healthySince = null;
     this.belowSince = null;

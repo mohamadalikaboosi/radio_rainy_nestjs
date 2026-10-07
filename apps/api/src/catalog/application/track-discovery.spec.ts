@@ -4,6 +4,9 @@ import { DatabaseService } from '../../shared/infrastructure/database/database.s
 import { TrackRepository } from './ports/track.repository';
 import { PgTrackRepository } from '../infrastructure/persistence/track.repository';
 import { TelegramTrackDiscovery } from './track-discovery';
+import { TelegramFloodWaitError } from './ports/telegram.types';
+
+const HOUR = 60 * 60_000;
 
 describe('TelegramTrackDiscovery', () => {
   let db: DatabaseService;
@@ -11,13 +14,17 @@ describe('TelegramTrackDiscovery', () => {
   let gw: FakeTelegramGateway;
   let queued: string[];
   let discovery: TelegramTrackDiscovery;
+  let now: number;
+  let pauses: number[];
 
   beforeEach(async () => {
     db = await freshDb();
     repo = new PgTrackRepository(db);
     gw = new FakeTelegramGateway();
     queued = [];
-    discovery = new TelegramTrackDiscovery(gw, repo, { onLyricsNeedFetch: async (id) => void queued.push(id) });
+    now = 0;
+    pauses = [];
+    discovery = new TelegramTrackDiscovery(gw, repo, { onLyricsNeedFetch: async (id) => void queued.push(id) }, { now: () => now, sleep: async (ms) => void pauses.push(ms) });
     gw.add(audioMsg(1, 'Artist A - Song A\nAlbum: Alb\nLyrics: https://telegra.ph/a-01\n#Rain #night'));
     gw.add(audioMsg(2, 'Artist B - Song B\n#rock'));
   });
@@ -72,6 +79,7 @@ describe('TelegramTrackDiscovery', () => {
   it('marks deleted messages UNAVAILABLE and restores them if they reappear', async () => {
     await discovery.sync('1001');
     gw.remove(2);
+    now += HOUR;
     const r = await discovery.sync('1001');
     expect(r.markedUnavailable).toBe(1);
     expect((await db.query(`SELECT status FROM tracks WHERE telegram_message_id = 2`)).rows[0]).toEqual({ status: 'UNAVAILABLE' });
@@ -79,6 +87,41 @@ describe('TelegramTrackDiscovery', () => {
     const r2 = await discovery.sync('1001', { full: true });
     expect(r2.restored).toBe(1);
     expect((await db.query(`SELECT status FROM tracks WHERE telegram_message_id = 2`)).rows[0]).toEqual({ status: 'READY' });
+  });
+
+  it('looks for deleted messages at most hourly on incremental syncs (each 100 tracks cost a rate-limited channels.getMessages)', async () => {
+    const checks = jest.spyOn(gw, 'existingAudioMessageIds');
+    await discovery.sync('1001'); // first sync after a start: checks
+    expect(checks).toHaveBeenCalledTimes(1);
+    now += 5 * 60_000;
+    await discovery.sync('1001'); // the periodic sync 5 minutes later: no check
+    expect(checks).toHaveBeenCalledTimes(1);
+    await discovery.sync('1001', { full: true }); // a full sync always checks
+    expect(checks).toHaveBeenCalledTimes(2);
+    await discovery.sync('1001', { checkDeleted: true });
+    expect(checks).toHaveBeenCalledTimes(3);
+    now += HOUR;
+    await discovery.sync('1001', { checkDeleted: false });
+    expect(checks).toHaveBeenCalledTimes(3);
+    await discovery.sync('1001');
+    expect(checks).toHaveBeenCalledTimes(4);
+  });
+
+  it('pauses between the getMessages batches of a large channel', async () => {
+    for (let i = 3; i <= 250; i++) gw.add(audioMsg(i, `Artist - Song ${i}`));
+    const checks = jest.spyOn(gw, 'existingAudioMessageIds');
+    await discovery.sync('1001');
+    expect(checks).toHaveBeenCalledTimes(3); // 250 tracks / 100
+    expect(pauses).toEqual([1500, 1500]);
+  });
+
+  it('a flood wait during the deleted-message check ends the check, not the sync (no job restart that asks Telegram again)', async () => {
+    gw.add(audioMsg(3, 'C - Song C'));
+    jest.spyOn(gw, 'existingAudioMessageIds').mockRejectedValue(new TelegramFloodWaitError(30));
+    const r = await discovery.sync('1001');
+    expect(r).toMatchObject({ scanned: 3, created: 3, markedUnavailable: 0 });
+    gw.add(audioMsg(4, 'D - Song D'));
+    expect(await discovery.sync('1001')).toMatchObject({ scanned: 1, created: 1 }); // progress was saved
   });
 
   it('one bad message does not abort the sync', async () => {

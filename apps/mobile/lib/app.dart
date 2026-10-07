@@ -12,6 +12,7 @@ import 'state/stations_controller.dart';
 import 'ui/player_screen.dart';
 import 'ui/setup_screen.dart';
 import 'ui/stations_screen.dart';
+import 'ui/theme.dart';
 
 /// Wires the settings, the audio and the screens together.
 class RadioApp extends StatefulWidget {
@@ -57,7 +58,7 @@ class _RadioAppState extends State<RadioApp> {
       locale: _language == null ? null : Locale(_language!),
       supportedLocales: Strings.supported,
       localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C7BFF), brightness: Brightness.dark), useMaterial3: true, scaffoldBackgroundColor: const Color(0xFF0B0D13)),
+      theme: rainyTheme(),
       home: address == null
           ? SetupScreen(onConnected: _connect)
           : _Home(key: ValueKey(_serverText), address: address, settings: widget.settings, player: widget.player, language: _language, onLanguage: _setLanguage, onChangeServer: _forget),
@@ -109,7 +110,7 @@ class _HomeState extends State<_Home> {
   void _open(Station s) {
     final c = _controllerFor(s.slug)..start();
     Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => PlayerScreen(controller: c)))
+        .push(MaterialPageRoute<void>(builder: (_) => PlayerScreen(controller: c, onLanguage: widget.onLanguage)))
         .whenComplete(() async {
       await widget.player.stop();
       c.dispose();
@@ -135,7 +136,7 @@ class _HomeState extends State<_Home> {
           if (c == null) {
             return Scaffold(body: Center(child: Text(context.tr('player.notFound'))));
           }
-          return PlayerScreen(controller: c, locked: true, onChangeServer: widget.onChangeServer);
+          return PlayerScreen(controller: c, locked: true, onChangeServer: widget.onChangeServer, onLanguage: widget.onLanguage);
         },
       );
     }

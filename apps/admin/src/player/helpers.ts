@@ -1,15 +1,5 @@
 /** Pure helpers of the public player (kept out of the components so they are unit-tested). */
 
-/** Stable hue 0-359 for a string: every track gets its own colour theme. */
-export function hueOf(seed: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) % 360;
-}
-
 /** Seconds until `iso`, measured with the server's clock (`serverTime` of the last response) so a wrong device clock doesn't matter. */
 export function secondsUntil(iso: string, serverTime: string, fetchedAt: number, now: number): number {
   const serverNow = Date.parse(serverTime) + (now - fetchedAt);
@@ -45,20 +35,90 @@ export function pickSponsor(list: readonly SponsorView[], rng: () => number = Ma
   return pool[pool.length - 1] ?? null;
 }
 
-/** Bar heights (0-1) for the equalizer from analyser bytes; falls back to a gentle synthetic wave when there is no signal. */
-export function barLevels(bytes: Uint8Array | null, bars: number, phase: number): number[] {
+/** Part of the analyser's range (0 - half the sample rate) the bars cover: ~0-11 kHz, where music (and the data-saver stream) has energy. */
+const VIZ_RANGE = 0.45;
+
+/**
+ * Bar levels (0-1) of the visualizer. Playing: the real spectrum from the analyser, in log-spaced bands so bass and mids get most bars (the
+ * loudest bin of each band), or, when the browser gives no signal (no Web Audio, MSE path), a lively synthetic envelope.
+ * Paused: a low idle wave at 4-7%. `t` is a clock in ms.
+ */
+export function vizLevels(bytes: Uint8Array | null, bars: number, playing: boolean, t: number, rng: () => number = Math.random): number[] {
   const out: number[] = [];
-  const hasSignal = bytes !== null && bytes.some((b) => b > 0);
+  const hasSignal = playing && bytes !== null && bytes.some((b) => b > 0);
+  const edge = (i: number): number => Math.floor((bytes?.length ?? 0) * VIZ_RANGE * (i / bars) ** 1.6);
   for (let i = 0; i < bars; i++) {
-    if (hasSignal && bytes) {
-      // the lower ~70% of the spectrum is where music lives
-      const idx = Math.min(bytes.length - 1, Math.floor((i / bars) * bytes.length * 0.7));
-      out.push((bytes[idx] ?? 0) / 255);
-    } else {
-      out.push(0.18 + 0.14 * (Math.sin(phase + i * 0.55) + 1) * 0.5 + 0.1 * (Math.sin(phase * 1.7 + i * 1.3) + 1) * 0.5);
-    }
+    if (!playing) out.push(0.055 + 0.015 * Math.sin(i / 3 + t / 900));
+    else if (hasSignal && bytes) {
+      let peak = 0;
+      for (let b = edge(i), end = Math.max(edge(i) + 1, edge(i + 1)); b < end && b < bytes.length; b++) peak = Math.max(peak, bytes[b] ?? 0);
+      out.push(peak / 255);
+    } else out.push(Math.min(1, (0.35 + 0.65 * Math.exp(-(((i - bars * 0.22) / (bars * 0.34)) ** 2))) * (0.25 + rng() * 0.75)));
   }
   return out;
+}
+
+/** One row of the lyrics card: a sung line, or an instrumental stretch ("• • •") wherever nothing is sung for a while. */
+export interface LyricRow {
+  start: number;
+  end: number;
+  text: string;
+  gap: boolean;
+}
+
+/** Synchronized lines -> rows, with instrumental rows for the intro, long solos and (when the duration is known) the outro. */
+export function lyricRows(lines: readonly { start: number; end: number; text: string }[], duration?: number | null, minGap = 6): LyricRow[] {
+  const rows: LyricRow[] = [];
+  let sungUntil = 0;
+  for (const l of lines) {
+    if (l.start - sungUntil >= minGap) rows.push({ start: sungUntil, end: l.start, text: '', gap: true });
+    rows.push({ start: l.start, end: l.end, text: l.text, gap: false });
+    sungUntil = Math.max(sungUntil, l.end);
+  }
+  if (rows.length > 0 && duration && duration - sungUntil >= minGap) rows.push({ start: sungUntil, end: duration, text: '', gap: true });
+  return rows;
+}
+
+/** The row on air at `position` seconds: the last one that started (-1 before the first). Computed in the browser from the server clock. */
+export function activeRowIndex(rows: readonly { start: number }[], position: number): number {
+  let lo = 0;
+  let hi = rows.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if ((rows[mid]?.start ?? Infinity) <= position) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+
+/** Karaoke fill of the active row, 0-1: the accent sweeps across the line while it is sung (done a moment before it ends). */
+export function karaokeFill(row: { start: number; end: number }, position: number): number {
+  return Math.min(1, Math.max(0, (position - row.start) / Math.max(0.5, row.end - row.start - 0.3)));
+}
+
+/** Share of the votes per option, in whole percent (0 when nobody voted yet). */
+export function voteShares(votes: readonly number[]): number[] {
+  const total = votes.reduce((a, v) => a + v, 0);
+  return votes.map((v) => (total > 0 ? Math.round((v / total) * 100) : 0));
+}
+
+/** A small remembered setting (lyrics on/off, volume); storage may be unavailable (private mode). */
+export function loadSetting(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+export function saveSetting(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* not remembered, still works for this visit */
+  }
 }
 
 export function voterId(): string {
@@ -72,24 +132,6 @@ export function voterId(): string {
   } catch {
     return `v${Math.random().toString(36).slice(2, 14).padEnd(12, 'x')}`;
   }
-}
-
-/** Index of the line being sung at `position` seconds (-1 before the first line / in a gap after the last). Computed in the browser: no polling. */
-export function activeLineIndex(lines: readonly { start: number; end: number }[], position: number): number {
-  let lo = 0;
-  let hi = lines.length - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const l = lines[mid];
-    if (!l) break;
-    if (l.start <= position) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
-  }
-  const line = lines[found];
-  return line && position < line.end + 1.5 ? found : -1; // a short grace after the line ends, then the gap is empty
 }
 
 export type QualityPref = 'auto' | 'high' | 'low';

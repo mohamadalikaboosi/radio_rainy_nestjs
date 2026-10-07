@@ -14,7 +14,8 @@ export function newTimeline(now: number): Timeline {
 }
 
 export interface PaceOptions {
-  bytesPerSec: number;
+  /** Read for every slice, so a getter can refine it while the track plays. */
+  readonly bytesPerSec: number;
   /** Seconds of audio sent ahead of real time (small = low latency, large = more resilient). */
   burstSeconds: number;
   sliceBytes: number;

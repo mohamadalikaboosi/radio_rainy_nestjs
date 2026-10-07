@@ -171,7 +171,11 @@ class RealtimeLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
     { provide: TelegramSessionStore, inject: [DatabaseService, SessionCipher], useFactory: (db: DatabaseService, c: SessionCipher) => new TelegramSessionStore(db, c) },
     { provide: TelegramClientManager, inject: [APP_CONFIG, TelegramSessionStore, SettingsService], useFactory: (c: AppConfig, s: TelegramSessionStore, st: SettingsService) => new TelegramClientManager(c, s, st) },
     { provide: TelegramConnection, useExisting: TelegramClientManager },
-    { provide: GramJsTelegramGateway, inject: [TelegramClientManager, ChannelRepository, APP_CONFIG], useFactory: (m: TelegramClientManager, ch: ChannelRepository, c: AppConfig) => new GramJsTelegramGateway(m, ch, c.TELEGRAM_DOWNLOAD_REQUEST_KB) },
+    {
+      provide: GramJsTelegramGateway,
+      inject: [TelegramClientManager, ChannelRepository, APP_CONFIG, TrackRepository],
+      useFactory: (m: TelegramClientManager, ch: ChannelRepository, c: AppConfig, t: TrackRepository) => new GramJsTelegramGateway(m, ch, c.TELEGRAM_DOWNLOAD_REQUEST_KB, (cid, mid) => t.getAudioIdentity(cid, mid)),
+    },
     { provide: RadioMetrics, useFactory: () => new RadioMetrics() },
     { provide: DiskAudioCache, inject: [APP_CONFIG, RadioMetrics], useFactory: (c: AppConfig, m: RadioMetrics) => new DiskAudioCache({ dir: c.AUDIO_CACHE_DIR ?? join(c.TMP_DIR, 'audio-cache'), maxBytes: c.AUDIO_CACHE_MAX_MB * 1024 * 1024, maxConcurrentFills: c.AUDIO_CACHE_CONCURRENT_FILLS }, m.cache) },
     { provide: 'AUDIO_STORE_SOURCE', inject: [SettingsService], useFactory: (s: SettingsService): AudioStoreSource => new SettingsAudioStoreSource(s) },

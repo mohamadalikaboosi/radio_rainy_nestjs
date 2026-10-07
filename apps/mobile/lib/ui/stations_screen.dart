@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../l10n/strings.dart';
 import '../state/stations_controller.dart';
-import 'common.dart';
+import 'theme.dart';
 
 /// The landing page of the app: every station, on-air ones first, with what each plays now.
 class StationsScreen extends StatelessWidget {
@@ -18,8 +18,9 @@ class StationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Rs.bg,
       appBar: AppBar(
-        title: Text('🌧 ${context.tr('app.title')}'),
+        title: Text(context.tr('app.title'), style: Rs.sansText(17, weight: FontWeight.w700)),
         actions: [
           PopupMenuButton<String>(
             tooltip: context.tr('stations.language'),
@@ -72,36 +73,43 @@ class _StationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hue = hueOf(station.slug);
     final subtitle = station.live
         ? (now?.title != null ? '${now!.title}${now!.artist != null ? ' — ${now!.artist}' : ''}' : context.tr('stations.tune'))
         : context.tr('stations.offAir');
     return Material(
-      color: Colors.transparent,
+      color: Rs.tint(0.035),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Rs.tint(0.08))),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(colors: [accent(hue, lightness: 0.28), accent(hue + 55, lightness: 0.2)]),
-          ),
+        child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(children: [
-            CircleAvatar(radius: 26, backgroundColor: Colors.white24, child: Icon(station.live ? Icons.graphic_eq : Icons.radio, color: Colors.white)),
+            // the record label of the design: accent when on air
+            Container(
+              width: 46,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: station.live ? Rs.acc : Rs.tint(0.08)),
+              child: Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: station.live ? Rs.bg : Rs.muted2)),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(station.title, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+                Text(station.title, style: Rs.sansText(17, weight: FontWeight.w700)),
                 const SizedBox(height: 2),
-                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70)),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: Rs.sansText(14, color: Rs.muted)),
               ]),
             ),
             if (station.live)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFF4D6D)), borderRadius: BorderRadius.circular(99)),
-                child: Text(context.tr('stations.onAir'), style: const TextStyle(color: Color(0xFFFF4D6D), fontSize: 11, fontWeight: FontWeight.w800)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(border: Border.all(color: Rs.tint(0.14)), borderRadius: BorderRadius.circular(99)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(width: 6, height: 6, decoration: const BoxDecoration(color: Rs.live, shape: BoxShape.circle)),
+                  const SizedBox(width: 7),
+                  Text(context.tr('stations.onAir'), style: Rs.monoText(context, 11, color: Rs.ink2, tracking: 0.08)),
+                ]),
               ),
           ]),
         ),

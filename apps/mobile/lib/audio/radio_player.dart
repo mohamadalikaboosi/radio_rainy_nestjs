@@ -19,6 +19,9 @@ abstract class RadioPlayer {
   /// Updates the lock-screen / notification text while playing.
   Future<void> updateMeta(NowPlayingMeta meta);
 
+  /// In-app volume, 0-1 (kept across streams).
+  Future<void> setVolume(double volume);
+
   /// true while audio is playing (or about to).
   Stream<bool> get playing;
 

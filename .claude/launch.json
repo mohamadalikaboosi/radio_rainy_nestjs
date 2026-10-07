@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin-dev",
+      "runtimeExecutable": "pnpm.cmd",
+      "runtimeArgs": ["--filter", "@radio_rainy/admin", "dev"],
+      "port": 5173
+    }
+  ]
+}

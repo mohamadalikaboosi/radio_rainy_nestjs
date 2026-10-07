@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TrackRepository } from './ports/track.repository';
 import { parseCaption } from '../domain/caption-parser';
-import { TelegramAudioMessage, TelegramGateway } from './ports/telegram.types';
+import { TelegramAudioMessage, TelegramFloodWaitError, TelegramGateway } from './ports/telegram.types';
 
 export interface SyncReport {
   channelId: string;
@@ -24,9 +24,29 @@ export interface DiscoveryListener {
 export interface SyncOptions {
   /** Re-scan the whole channel (catches edited captions) instead of only new messages. */
   full?: boolean;
+  /** true: always look for deleted messages, false: never. Default: on a full sync, otherwise at most every `deletedCheckEveryMs`. */
   checkDeleted?: boolean;
   signal?: AbortSignal;
 }
+
+export interface DiscoveryOptions {
+  /**
+   * The deleted-message check costs one channels.getMessages per 100 tracks, and the playback download needs the same method:
+   * running it on every incremental sync kept the account in FLOOD_WAIT and left the radio silent for 30 s at a time.
+   */
+  deletedCheckEveryMs: number;
+  /** Pause between two getMessages batches of the deleted-message check. */
+  batchPauseMs: number;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+const DEFAULT_DISCOVERY: DiscoveryOptions = {
+  deletedCheckEveryMs: 60 * 60_000,
+  batchPauseMs: 1500,
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+};
 
 const EXISTS_BATCH = 100;
 
@@ -35,12 +55,18 @@ export class TelegramTrackDiscovery {
   private readonly logger = new Logger(TelegramTrackDiscovery.name);
   /** One run at a time per channel; concurrent callers share it. */
   private readonly running = new Map<string, Promise<SyncReport>>();
+  /** When each channel was last checked for deleted messages (per process). */
+  private readonly deletedCheckedAt = new Map<string, number>();
+  private readonly opt: DiscoveryOptions;
 
   constructor(
     private readonly gateway: TelegramGateway,
     private readonly tracks: TrackRepository,
     private readonly listener?: DiscoveryListener,
-  ) {}
+    options: Partial<DiscoveryOptions> = {},
+  ) {
+    this.opt = { ...DEFAULT_DISCOVERY, ...options };
+  }
 
   /** Concurrent callers for the same channel share one run (no double-scan). */
   sync(channelId: string, options: SyncOptions = {}): Promise<SyncReport> {
@@ -79,7 +105,7 @@ export class TelegramTrackDiscovery {
       await this.processMessage(msg, report);
     }
 
-    if (options.checkDeleted !== false) report.markedUnavailable = await this.detectDeleted(channel.id);
+    if (this.deletedCheckDue(channel.id, full, options.checkDeleted)) report.markedUnavailable = await this.detectDeleted(channel.id);
 
     await this.tracks.saveSyncState(channel.id, maxId, full);
     report.durationMs = Date.now() - started;
@@ -117,12 +143,28 @@ export class TelegramTrackDiscovery {
     }
   }
 
+  private deletedCheckDue(channelId: string, full: boolean, forced: boolean | undefined): boolean {
+    if (forced !== undefined) return forced;
+    const last = this.deletedCheckedAt.get(channelId);
+    return full || last === undefined || this.opt.now() - last >= this.opt.deletedCheckEveryMs;
+  }
+
+  /** Best effort: a flood wait ends the check (the next due check runs it again), never the sync, so the job does not restart and ask again. */
   private async detectDeleted(channelId: string): Promise<number> {
+    this.deletedCheckedAt.set(channelId, this.opt.now());
     const known = await this.tracks.listActiveMessageIds(channelId);
     let marked = 0;
     for (let i = 0; i < known.length; i += EXISTS_BATCH) {
+      if (i > 0) await this.opt.sleep(this.opt.batchPauseMs);
       const batch = known.slice(i, i + EXISTS_BATCH).map((k) => k.messageId);
-      const existing = await this.gateway.existingAudioMessageIds(channelId, batch);
+      let existing: Set<number>;
+      try {
+        existing = await this.gateway.existingAudioMessageIds(channelId, batch);
+      } catch (err) {
+        if (!(err instanceof TelegramFloodWaitError)) throw err;
+        this.logger.warn({ msg: 'deleted-message check stopped by a telegram flood wait; continuing next time', channelId, checked: i, of: known.length, retryAfterSeconds: err.retryAfterSeconds });
+        break;
+      }
       const missing = batch.filter((id) => !existing.has(id));
       if (missing.length > 0) {
         marked += await this.tracks.markUnavailable(channelId, missing);

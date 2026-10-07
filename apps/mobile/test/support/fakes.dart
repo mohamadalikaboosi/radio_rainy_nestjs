@@ -32,6 +32,10 @@ class FakePlayer implements RadioPlayer {
   @override
   Future<void> updateMeta(NowPlayingMeta meta) async => metas.add(meta);
 
+  double volume = 1;
+  @override
+  Future<void> setVolume(double v) async => volume = v;
+
   void stall() => _stalls.add(null);
   void fail(String e) => _errors.add(e);
   void pressStopOnLockScreen() => _stopRequests.add(null);

@@ -14,6 +14,8 @@ class RadioAudioHandler extends BaseAudioHandler {
     _player.processingStateStream.listen((s) {
       // buffering AFTER we had been playing = the network could not keep up (not the first fill)
       if (s == ProcessingState.buffering && wasReady && _player.playing) _stalls.add(null);
+      // a live stream never "completes": the connection dropped or the server restarted -> the controller reconnects
+      if (s == ProcessingState.completed && _player.playing) _errors.add('The live stream ended');
       if (s == ProcessingState.ready) wasReady = true;
       if (s == ProcessingState.idle) wasReady = false;
     });
@@ -40,6 +42,8 @@ class RadioAudioHandler extends BaseAudioHandler {
       _errors.add('$e');
     }
   }
+
+  Future<void> setVolume(double volume) => _player.setVolume(volume);
 
   void setMeta(NowPlayingMeta meta) {
     final uri = _last;
@@ -108,6 +112,9 @@ class BackgroundRadioPlayer implements RadioPlayer {
 
   @override
   Future<void> updateMeta(NowPlayingMeta meta) async => _handler.setMeta(meta);
+
+  @override
+  Future<void> setVolume(double volume) => _handler.setVolume(volume);
 
   @override
   Stream<bool> get playing => _handler.playingStream;

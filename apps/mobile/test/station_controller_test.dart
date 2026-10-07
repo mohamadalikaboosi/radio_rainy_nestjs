@@ -17,7 +17,7 @@ void main() {
   late DateTime clock;
   late StationController c;
 
-  Future<StationController> make({bool lowOffered = true, Map<String, Object?> extra = const {}, bool slow = false}) async {
+  Future<StationController> make({bool lowOffered = true, Map<String, Object?> extra = const {}, bool slow = false, Duration retry = const Duration(seconds: 1)}) async {
     SharedPreferences.setMockInitialValues({});
     settings = await Settings.load();
     player = FakePlayer();
@@ -45,7 +45,7 @@ void main() {
         ...extra,
       }, postAnswers: {'/radio/a/vote': {'status': 'OPEN', 'poll': {'id': 'p1', 'options': [{'hashtag': 'rock', 'votes': 3}, {'hashtag': 'jazz', 'votes': 1}], 'totalVotes': 4}, 'myVote': 'rock'}}),
     );
-    return StationController(api: api, address: address, slug: 'a', player: player, settings: settings, realtime: (a, s) => RealtimeClient(a, s, connector: (_) => socket), now: () => clock, slowConnection: slow);
+    return StationController(api: api, address: address, slug: 'a', player: player, settings: settings, realtime: (a, s) => RealtimeClient(a, s, connector: (_) => socket), now: () => clock, slowConnection: slow, retryBase: retry);
   }
 
   tearDown(() => c.dispose());
@@ -146,6 +146,7 @@ void main() {
     expect(c.connected, isTrue);
     expect(c.messages.single.text, 'Hello');
     expect(c.listeners, 4);
+    expect(c.clients, 6); // "6 online"
     expect(c.vote.options.single.votes, 5);
     expect(c.vote.myVote, 'rock'); // same poll: my vote survives the push
 
@@ -158,6 +159,42 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(c.current?.title, 'Song Two');
     expect(player.metas.last.title, 'Song Two'); // the lock screen follows the song
+  });
+
+  test('a stream that drops by itself is reconnected until it plays again; pressing stop while it waits gives up', () async {
+    c = await make(retry: const Duration(milliseconds: 10));
+    await c.start();
+    await c.togglePlay();
+    await Future<void>.delayed(Duration.zero);
+    player.fail('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.reconnecting, isTrue); // "Reconnecting…" instead of "on air"
+    expect(c.playing, isTrue); // still wants to listen: the button says "pause"
+    expect(c.sounding, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(player.played, hasLength(2)); // retried on a fresh live connection
+    expect(c.reconnecting, isFalse);
+
+    player.fail('again');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.reconnecting, isTrue);
+    await c.togglePlay(); // the listener stops while it waits
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(player.played, hasLength(2)); // no retry after stop
+    expect(c.reconnecting, isFalse);
+    expect(c.playing, isFalse);
+  });
+
+  test('the lyrics card and the in-app volume are remembered', () async {
+    c = await make();
+    await c.start();
+    expect(c.showLyrics, isTrue);
+    await c.toggleLyrics();
+    expect(c.showLyrics, isFalse);
+    expect(settings.showLyrics, isFalse);
+    await c.setVolume(0.4);
+    expect(player.volume, 0.4);
+    expect(settings.volume, 0.4);
   });
 
   test('an unknown station is reported, nothing plays', () async {

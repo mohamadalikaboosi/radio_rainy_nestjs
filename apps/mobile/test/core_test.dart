@@ -53,6 +53,37 @@ void main() {
       expect(activeLineIndex(const [], 5), -1);
     });
 
+    test('lyric rows: an instrumental row for the intro, long gaps and the outro; short pauses stay as they are', () {
+      const sung = [LyricLine(start: 16, end: 21, text: 'a'), LyricLine(start: 22, end: 27, text: 'b'), LyricLine(start: 46, end: 51, text: 'c')];
+      final rows = lyricRows(sung, duration: 80);
+      expect([for (final r in rows) r.gap ? '•' : r.text], ['•', 'a', 'b', '•', 'c', '•']);
+      expect((rows[3].start, rows[3].end), (27.0, 46.0));
+      expect(lyricRows(const []), isEmpty);
+    });
+
+    test('the active row is the last one that started; the karaoke fill sweeps 0 -> 1 across it', () {
+      final rows = lyricRows(const [LyricLine(start: 0, end: 5, text: 'first'), LyricLine(start: 28, end: 34, text: 'second')]);
+      expect([for (final r in rows) r.gap ? '•' : r.text], ['first', '•', 'second']);
+      expect(activeRowIndex(rows, -1), -1);
+      expect(activeRowIndex(rows, 3), 0);
+      expect(activeRowIndex(rows, 10), 1); // between lines: the instrumental row
+      expect(activeRowIndex(rows, 30), 2);
+      const row = LyricRow(start: 10, end: 14, text: 'x');
+      expect(karaokeFill(row, 9), 0);
+      expect(karaokeFill(row, 11.85), closeTo(0.5, 0.01));
+      expect(karaokeFill(row, 13.8), 1); // full a moment before the line ends
+    });
+
+    test('vote shares are whole percent; the idle visualizer stays low, the playing one moves', () {
+      expect(voteShares([0, 0]), [0, 0]);
+      expect(voteShares([5, 3]), [63, 38]);
+      final idle = vizLevels(64, playing: false, tMs: 1234);
+      expect(idle.every((v) => v >= 0.04 && v <= 0.07), isTrue);
+      final live = vizLevels(64, playing: true, tMs: 0, rng: () => 0.5);
+      expect(live.every((v) => v > 0.2 && v <= 1), isTrue);
+      expect(live[14], greaterThan(live[63]));
+    });
+
     test('the position uses the SERVER clock, so a wrong phone clock does not matter', () {
       final started = DateTime.utc(2026, 1, 1, 12, 0, 0);
       final serverNow = DateTime.utc(2026, 1, 1, 12, 1, 30); // 90 s into the song

@@ -4,7 +4,7 @@ import { Writable } from 'node:stream';
 import { ChannelRepository } from '../../catalog/application/ports/channel.repository';
 import { Broadcaster } from '../../radio/domain/broadcaster';
 import { HttpListenerSink } from '../../radio/application/http-listener-sink';
-import { Decision, LiveQualityController } from '../domain/live-quality';
+import { Decision, LiveQualityController, SourceRate } from '../domain/live-quality';
 
 export interface LiveOptions {
   retryMinMs: number;
@@ -69,6 +69,7 @@ export class TelegramLiveStreamer {
     let resume = false; // restarting only to change the quality: the status stays LIVE, no back-off
     while (!signal.aborted) {
       const startedAt = Date.now();
+      let source: SourceRate | null = null;
       try {
         if (!resume) await this.channels.setLiveStatus(this.channelId, 'STARTING', null);
         resume = false;
@@ -83,6 +84,8 @@ export class TelegramLiveStreamer {
         let adapting: Decision = null;
         let lastSpeedLog = 0;
         const q = this.quality.quality;
+        const input = new SourceRate();
+        source = input;
         this.quality.attemptStarted(Date.now());
         const watchdog = setTimeout(() => {
           if (active || signal.aborted) return;
@@ -99,12 +102,14 @@ export class TelegramLiveStreamer {
           },
           onLog: (line) => this.logger.warn({ msg: 'ffmpeg', channelId: this.channelId, line }),
           onSpeed: (speed) => {
-            if (Date.now() - lastSpeedLog > 30_000) {
-              lastSpeedLog = Date.now();
-              this.logger.log({ msg: 'telegram live: encoder speed', channelId: this.channelId, speed, quality: this.quality.quality.name });
+            const now = Date.now();
+            const sourceRate = input.ratio(now);
+            if (now - lastSpeedLog > 30_000) {
+              lastSpeedLog = now;
+              this.logger.log({ msg: 'telegram live: encoder speed', channelId: this.channelId, speed, source: sourceRate, quality: this.quality.quality.name });
             }
             if (adapting || signal.aborted) return;
-            const d = this.quality.observe(speed, Date.now());
+            const d = this.quality.observe(speed, now, sourceRate);
             if (!d) return;
             adapting = d;
             this.logger.warn({ msg: `telegram live: connection ${d === 'down' ? 'too slow' : 'healthy'}; ${d === 'down' ? 'lowering' : 'raising'} the quality`, channelId: this.channelId, from: q.name, to: this.quality.quality.name, speed });
@@ -112,7 +117,7 @@ export class TelegramLiveStreamer {
           },
         };
         this.logger.log({ msg: 'telegram live: quality', channelId: this.channelId, quality: q.name, videoKbps: q.videoKbps, audioKbps: q.audioKbps });
-        const res = await this.publisher.publish(target, (sink) => this.attach(sink), attempt.signal, hooks, q).finally(() => {
+        const res = await this.publisher.publish(target, (sink) => this.attach(sink, input), attempt.signal, hooks, q).finally(() => {
           clearTimeout(watchdog);
           signal.removeEventListener('abort', onOuterAbort);
         });
@@ -126,7 +131,8 @@ export class TelegramLiveStreamer {
       } catch (err) {
         if (signal.aborted) return;
         const message = err instanceof Error ? err.message : String(err);
-        if (this.quality.crashed(Date.now()) === 'down') this.logger.warn({ msg: 'telegram live: the connection keeps dropping; lowering the quality', channelId: this.channelId, to: this.quality.quality.name });
+        const now = Date.now();
+        if (this.quality.crashed(now, source?.ratio(now) ?? null) === 'down') this.logger.warn({ msg: 'telegram live: the connection keeps dropping; lowering the quality', channelId: this.channelId, to: this.quality.quality.name });
         this.logger.warn({ msg: 'telegram live stream failed; will retry', channelId: this.channelId, err: message, retryInMs: delay });
         await this.channels.setLiveStatus(this.channelId, 'ERROR', message.slice(0, 1200)).catch((e: unknown) => this.logger.warn({ msg: 'live status update failed', err: String(e) }));
         if (Date.now() - startedAt > this.opt.stableAfterMs) delay = this.opt.retryMinMs;
@@ -136,9 +142,18 @@ export class TelegramLiveStreamer {
     }
   }
 
-  /** Feeds the radio stream to the publisher. Slow/dead consumers are dropped (never grows memory, never blocks listeners). */
-  private attach(sink: Writable): () => void {
-    const unsubscribe = this.broadcaster.subscribe(new HttpListenerSink(sink, this.opt.maxBacklogBytes, (reason) => this.logger.warn({ msg: 'live sink dropped', channelId: this.channelId, reason })));
-    return unsubscribe;
+  /**
+   * Feeds the radio stream to the publisher, measuring how fast the radio delivers it (`input`). Slow/dead consumers are dropped (never grows
+   * memory, never blocks listeners).
+   */
+  private attach(sink: Writable, input: SourceRate): () => void {
+    const out = new HttpListenerSink(sink, this.opt.maxBacklogBytes, (reason) => this.logger.warn({ msg: 'live sink dropped', channelId: this.channelId, reason }));
+    return this.broadcaster.subscribe({
+      write: (chunk) => {
+        input.fed(chunk, Date.now());
+        out.write(chunk);
+      },
+      end: () => out.end(),
+    });
   }
 }

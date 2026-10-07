@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { mp3BytesPerSec } from '../../engagement/domain/mp3-info';
 import { stripId3v2 } from '../domain/id3';
 import { TelegramFloodWaitError, TelegramGateway, TelegramNotReadyError } from '../../catalog/application/ports/telegram.types';
 import { Track } from '../../catalog/domain/track.types';
@@ -10,14 +11,45 @@ export interface LiveTranscoder {
 
 export interface OpenedAudio {
   bytes: AsyncIterable<Uint8Array>;
-  bytesPerSec: number;
+  /** Real-time rate. May be refined once the first bytes have been read (it is read again for every paced slice). */
+  readonly bytesPerSec: number;
   /** Releases the underlying Telegram download (idempotent). */
   cancel(): Promise<void>;
 }
 
 const MP3_MIME = new Set(['audio/mpeg', 'audio/mp3', 'audio/mpeg3', 'audio/x-mpeg-3']);
 const MIN_BPS = 4_000; // 32 kbps
-const MAX_BPS = 40_000; // 320 kbps
+const MAX_BPS = 40_000; // 320 kbps: no MP3 is faster
+/** Enough audio to find the first frames (and a Xing/VBRI header) after the ID3 tag. */
+const PROBE_BYTES = 16 * 1024;
+
+/**
+ * Rate from the Telegram metadata. The file size includes the ID3 tag (cover art!) and the duration is rounded, so a 320 kbps file reads a
+ * little above 320 kbps: that is capped, never thrown away (falling back to 128 kbps played such tracks at 0.4x real time).
+ */
+export function metadataBytesPerSec(audioBytes: number | null, duration: number | null): number | null {
+  if (!audioBytes || !duration || duration <= 0) return null;
+  const bps = audioBytes / duration;
+  return bps < MIN_BPS ? null : Math.min(bps, MAX_BPS);
+}
+
+/** Passes the audio through untouched and shows `inspect` its first `size` bytes as soon as they are there (or the whole input, if shorter). */
+async function* tapHead(source: AsyncIterable<Uint8Array>, size: number, inspect: (head: Buffer) => void): AsyncGenerator<Uint8Array> {
+  let head: Uint8Array[] | null = [];
+  let bytes = 0;
+  for await (const chunk of source) {
+    if (head) {
+      head.push(chunk);
+      bytes += chunk.length;
+      if (bytes >= size) {
+        inspect(Buffer.concat(head));
+        head = null;
+      }
+    }
+    yield chunk;
+  }
+  if (head && bytes > 0) inspect(Buffer.concat(head));
+}
 
 /** Download with resume: a mid-file network hiccup continues from the last received byte instead of skipping the track. */
 export async function* resilientDownload(
@@ -195,12 +227,22 @@ export class TrackAudioPipeline {
     };
 
     if (isMp3) {
-      let bps = (this.defaultBitrateKbps * 1000) / 8;
-      if (track.fileSize && track.duration && track.duration > 0) {
-        const measured = track.fileSize / track.duration;
-        if (measured >= MIN_BPS && measured <= MAX_BPS) bps = measured;
-      }
-      return { bytes: stripId3v2(raw), bytesPerSec: bps, cancel };
+      // First guess from the metadata; replaced by what the audio itself says (frame bitrate / VBR header) once its first bytes arrive.
+      let bps = metadataBytesPerSec(track.fileSize, track.duration) ?? (this.defaultBitrateKbps * 1000) / 8;
+      let tagBytes = 0;
+      const bytes = tapHead(stripId3v2(raw, (n) => (tagBytes = n)), PROBE_BYTES, (head) => {
+        const audioBytes = track.fileSize ? Math.max(0, track.fileSize - tagBytes) : null;
+        const fromAudio = mp3BytesPerSec(head, audioBytes);
+        const refined = fromAudio !== null && fromAudio >= MIN_BPS ? Math.min(fromAudio, MAX_BPS) : metadataBytesPerSec(audioBytes, track.duration);
+        if (refined !== null) bps = refined;
+      });
+      return {
+        bytes,
+        get bytesPerSec() {
+          return bps;
+        },
+        cancel,
+      };
     }
     if (!this.transcoder) throw new Error(`Track ${track.id} is ${track.mimeType ?? 'unknown'} and no transcoder (ffmpeg) is configured`);
     return { bytes: this.transcoder.toMp3(raw, this.defaultBitrateKbps, signal), bytesPerSec: (this.defaultBitrateKbps * 1000) / 8, cancel };

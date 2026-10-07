@@ -18,6 +18,14 @@ class Settings {
   QualityPref get quality => qualityPrefFrom(_prefs.getString('quality'));
   Future<void> setQuality(QualityPref q) => _prefs.setString('quality', q.name);
 
+  /// The lyrics card is shown (default) or hidden.
+  bool get showLyrics => _prefs.getBool('lyrics') ?? true;
+  Future<void> setShowLyrics(bool v) => _prefs.setBool('lyrics', v);
+
+  /// In-app volume 0-1 (desktop slider; phones use the hardware buttons and stay at 1).
+  double get volume => (_prefs.getDouble('volume') ?? 1.0).clamp(0.0, 1.0);
+  Future<void> setVolume(double v) => _prefs.setDouble('volume', v);
+
   /// null = follow the phone's language.
   String? get language => _prefs.getString('language');
   Future<void> setLanguage(String? v) async => v == null ? _prefs.remove('language') : _prefs.setString('language', v);

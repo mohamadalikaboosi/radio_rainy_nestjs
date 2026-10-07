@@ -522,7 +522,10 @@ export class PlaybackEngine {
     let bytes = 0;
     try {
       for await (const slice of pace(audio.bytes, {
-        bytesPerSec: audio.bytesPerSec,
+        // read per slice: the pipeline replaces its metadata guess with the rate of the audio itself once the first bytes are in
+        get bytesPerSec() {
+          return audio.bytesPerSec;
+        },
         burstSeconds: o.burstSeconds,
         sliceBytes: o.sliceBytes,
         now: o.now,
@@ -545,7 +548,7 @@ export class PlaybackEngine {
           this.currentPlayback = { track, startedAt, historyId, seq, bytesPerSec: audio.bytesPerSec };
           this.tracksSinceAd++;
           this.emit({ type: 'track-started', trackId: track.id, seq });
-          this.logger.log({ msg: 'playback started', channelId: this.d.channelId, trackId: track.id, title: track.title, artist: track.artist, seq, listeners: this.d.broadcaster.listenerCount });
+          this.logger.log({ msg: 'playback started', channelId: this.d.channelId, trackId: track.id, title: track.title, artist: track.artist, seq, kbps: Math.round((audio.bytesPerSec * 8) / 1000), listeners: this.d.broadcaster.listenerCount });
         }
         bytes += slice.length;
         this.status = 'PLAYING';

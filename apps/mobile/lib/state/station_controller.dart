@@ -26,9 +26,12 @@ class StationController extends ChangeNotifier {
     DateTime Function()? now,
     this.pollEvery = const Duration(seconds: 3),
     this.slowConnection = false,
+    this.retryBase = const Duration(seconds: 1),
   })  : _realtimeFactory = realtime ?? ((a, s) => RealtimeClient(a, s)),
         _now = now ?? DateTime.now,
-        pref = settings.quality;
+        pref = settings.quality,
+        showLyrics = settings.showLyrics,
+        volume = settings.volume;
 
   final ApiClient api;
   final ServerAddress address;
@@ -40,6 +43,8 @@ class StationController extends ChangeNotifier {
   final DateTime Function() _now;
   /// The OS says the connection is slow / data saver is on: auto mode starts on the light stream.
   final bool slowConnection;
+  /// First reconnect delay after the stream dropped; it doubles up to 15 s.
+  final Duration retryBase;
 
   Station? station;
   Current? current;
@@ -49,11 +54,21 @@ class StationController extends ChangeNotifier {
   List<Sponsor> sponsors = const [];
   List<LiveMessage> messages = const [];
   int? listeners;
+  /// Open pages/apps of the station (sockets), from the server's counts.
+  int? clients;
   bool connected = false;
   bool playing = false;
   bool notFound = false;
   String? error;
   QualityPref pref;
+  bool showLyrics;
+  double volume;
+
+  /// The stream dropped while the listener still wants it: reconnecting with back-off (shown instead of "on air").
+  bool reconnecting = false;
+  bool _wanted = false;
+  int _attempts = 0;
+  Timer? _retry;
 
   /// Auto mode gave up on the normal stream (it stalled repeatedly) for this session.
   bool stalledOnHigh = false;
@@ -82,18 +97,31 @@ class StationController extends ChangeNotifier {
     return p == null || l == null || !l.synced ? -1 : activeLineIndex(l.lines, p);
   }
 
+  /// The server's clock now (from the last state it sent): countdowns don't depend on a wrong phone clock.
+  DateTime get serverNow => current?.serverTime?.add(_now().difference(_currentAt)) ?? _now();
+
+  /// Sound is (meant to be) coming out right now.
+  bool get sounding => playing && !reconnecting;
+
   Future<void> start() async {
+    unawaited(player.setVolume(volume));
     _subs
       ..add(player.playing.listen((p) {
-        playing = p;
+        playing = p || reconnecting;
+        if (p) {
+          reconnecting = false;
+          _attempts = 0;
+        }
         _changed();
       }))
       ..add(player.errors.listen((e) {
         error = e;
+        if (_wanted) _scheduleReconnect();
         _changed();
       }))
       ..add(player.stalls.listen((_) => _onStall()))
       ..add(player.stopRequests.listen((_) {
+        _giveUp();
         playing = false;
         _changed();
       }));
@@ -155,6 +183,7 @@ class StationController extends ChangeNotifier {
         vote = _keepMine(e.vote);
         messages = e.messages;
         listeners = e.listeners;
+        clients = e.clients;
       case CurrentEvent():
         _setCurrent(e.current);
       case VoteEvent():
@@ -163,6 +192,7 @@ class StationController extends ChangeNotifier {
         messages = e.messages;
       case CountsEvent():
         listeners = e.listeners;
+        clients = e.clients;
     }
     _changed();
   }
@@ -211,6 +241,7 @@ class StationController extends ChangeNotifier {
 
   Future<void> togglePlay() async {
     if (playing) {
+      _giveUp();
       await player.stop();
       playing = false;
       _changed();
@@ -220,10 +251,43 @@ class StationController extends ChangeNotifier {
   }
 
   Future<void> _play() async {
+    _wanted = true;
     error = null;
     playing = true; // optimistic: the player stream corrects it
     _changed();
     await player.play(api.streamUri(slug, low: lowActive), _meta());
+  }
+
+  /// Network loss / server restart: try again (1 s, 2 s, 4 s ... 15 s) until it plays or the listener stops.
+  void _scheduleReconnect() {
+    reconnecting = true;
+    playing = true;
+    final delay = retryBase * (1 << _attempts.clamp(0, 4));
+    _attempts++;
+    _retry?.cancel();
+    _retry = Timer(delay > const Duration(seconds: 15) ? const Duration(seconds: 15) : delay, () {
+      if (_wanted && !_disposed) unawaited(_play());
+    });
+  }
+
+  void _giveUp() {
+    _wanted = false;
+    _retry?.cancel();
+    reconnecting = false;
+    _attempts = 0;
+  }
+
+  Future<void> setVolume(double v) async {
+    volume = v.clamp(0.0, 1.0);
+    _changed();
+    await player.setVolume(volume);
+    await settings.setVolume(volume);
+  }
+
+  Future<void> toggleLyrics() async {
+    showLyrics = !showLyrics;
+    _changed();
+    await settings.setShowLyrics(showLyrics);
   }
 
   void _onStall() {
@@ -265,6 +329,7 @@ class StationController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _poll?.cancel();
+    _retry?.cancel();
     for (final s in _subs) {
       s.cancel();
     }

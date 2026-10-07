@@ -2,14 +2,24 @@ import { Writable } from 'node:stream';
 import { Broadcaster } from '../../radio/domain/broadcaster';
 import { RtmpPublisher, RtmpTarget, TelegramLiveApi } from './ports/telegram-live';
 import { DEFAULT_ADAPT, LIVE_LADDER, LiveQualityController } from '../domain/live-quality';
-import { buildFfmpegRtmpArgs } from '../infrastructure/ffmpeg-rtmp-publisher';
+import { buildFfmpegRtmpArgs, buildPcmDecoderArgs } from '../infrastructure/ffmpeg-rtmp-publisher';
 import { TelegramLiveStreamer } from './telegram-live-streamer';
 
+describe('buildPcmDecoderArgs', () => {
+  it('turns the radio mp3 into raw 48 kHz stereo PCM, so a track with another sample rate never reaches the encoder as a format change', () => {
+    const args = buildPcmDecoderArgs();
+    expect(args.join(' ')).toContain('-f mp3 -i pipe:0 -vn -f s16le -ar 48000 -ac 2 pipe:1');
+  });
+});
+
 describe('buildFfmpegRtmpArgs', () => {
-  it('publishes mp3 from stdin + a still video to url+key, AAC at 48 kHz', () => {
+  it('publishes 48 kHz PCM from stdin + a still video to url+key, AAC at 48 kHz', () => {
     const args = buildFfmpegRtmpArgs({ url: 'rtmps://dc5-1.rtmp.t.me:443/s/', key: 'abc-123' }, LIVE_LADDER[0]);
     expect(args.at(-1)).toBe('rtmps://dc5-1.rtmp.t.me:443/s/abc-123');
-    expect(args).toEqual(expect.arrayContaining(['-f', 'mp3', '-i', 'pipe:0', '-c:a', 'aac', '-ar', '48000', '-f', 'flv']));
+    expect(args.join(' ')).toContain('-re -thread_queue_size 1024 -f s16le -ar 48000 -ac 2 -i pipe:0');
+    expect(args).toEqual(expect.arrayContaining(['-c:a', 'aac', '-ar', '48000', '-f', 'flv']));
+    // no timestamp-based audio filter: on a sample-rate change aresample(first_pts=0) padded the whole live with silence at one timestamp
+    expect(args.join(' ')).not.toContain('aresample');
     expect(args).toEqual(expect.arrayContaining(['-b:a', '128k', '-b:v', '300k']));
     // a lower rung shrinks both the audio and the picture
     const low = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[2]);
@@ -18,9 +28,11 @@ describe('buildFfmpegRtmpArgs', () => {
     // the picture comes from a PNG that ffmpeg re-reads for every frame (so an ad banner can replace it live)
     const withSlide = buildFfmpegRtmpArgs({ url: 'rtmps://x/s/', key: 'k' }, LIVE_LADDER[0], '/tmp/slide.png');
     expect(withSlide.slice(withSlide.indexOf('image2') - 1, withSlide.indexOf('image2') + 7)).toEqual(['-f', 'image2', '-loop', '1', '-framerate', '5', '-i', '/tmp/slide.png']);
-    // the live encoder does no text rendering at all and is cheap: still-image tune, few frames per second, limited threads, silence instead of gaps
+    // ...through a tiny queue: each queued frame is an old copy of the slide (a 64-frame queue showed the previous title for 12.8 s)
+    expect(withSlide.join(' ')).toContain('-re -thread_queue_size 4 -f image2');
+    // the live encoder does no text rendering at all and is cheap: still-image tune, few frames per second, limited threads
     expect(withSlide.join(' ')).not.toContain('drawtext');
-    expect(withSlide).toEqual(expect.arrayContaining(['-tune', 'stillimage,zerolatency', '-threads', '2', '-af', 'aresample=async=1:first_pts=0']));
+    expect(withSlide).toEqual(expect.arrayContaining(['-tune', 'stillimage,zerolatency', '-threads', '2']));
     // url without trailing slash still joins correctly
     expect(buildFfmpegRtmpArgs({ url: 'rtmps://x/s', key: 'k' }).at(-1)).toBe('rtmps://x/s/k');
   });

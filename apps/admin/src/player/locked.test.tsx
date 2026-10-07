@@ -48,7 +48,7 @@ describe("a station's own page (/<uuid>) plays only that station", () => {
 
   it('the UUID resolves to its station: its name, no station picker, never touches another station', async () => {
     at(`/${BETA}`);
-    expect(await screen.findByText(/Beta FM/)).toBeInTheDocument();
+    expect((await screen.findAllByText('Beta FM')).length).toBeGreaterThan(0); // header + the record label
     await waitFor(() => expect(calls).toContain('/radio/beta/current'));
     expect(screen.queryByLabelText('Station')).toBeNull();
     expect(calls.some((c) => c.startsWith('/radio/alpha/'))).toBe(false);
