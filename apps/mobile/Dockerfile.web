@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+# The listener app built for the WEB, to look at it in a browser without a phone or an emulator (a preview: the shipped targets are
+# Android / iOS / macOS). Run it with:  docker compose --profile mobile up -d --build mobile-web   ->  http://localhost:8080
+FROM ghcr.io/cirruslabs/flutter:stable AS build
+
+# Networks that inspect TLS (a corporate proxy) need their root CA to reach pub.dev / GitHub: put the *.crt in apps/mobile/docker/certs/
+# (git-ignored). Without one nothing changes.
+COPY docker/certs/ /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+# The image's SDK can lag behind the stable channel; the app needs Dart >= 3.13.5 (pubspec.yaml), so move it to the current stable.
+RUN git config --global --add safe.directory '*' \
+ && cd "$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")" \
+ && git fetch --depth 1 origin stable && git checkout -f FETCH_HEAD \
+ && flutter --version
+
+WORKDIR /app
+COPY pubspec.yaml pubspec.lock ./
+RUN flutter pub get
+COPY . .
+# web scaffolding only inside the image; CanvasKit is served locally (its CDN is not reachable everywhere)
+RUN flutter create --platforms=web --project-name radio_rainy . \
+ && flutter build web --release --no-web-resources-cdn
+
+FROM nginx:alpine
+COPY --from=build /app/build/web /usr/share/nginx/html
+EXPOSE 80

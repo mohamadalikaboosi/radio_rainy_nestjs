@@ -25,6 +25,15 @@ flutter run                 # a connected device / emulator (android, ios, macos
 flutter test && flutter analyze
 ```
 
+**Without Flutter, phone or emulator**: Docker builds the app for the web and serves it on http://localhost:8080 (a preview; enter the server
+address `localhost:3000`):
+
+```bash
+docker compose --profile mobile up -d --build mobile-web
+```
+
+Behind a TLS-inspecting proxy the build needs that proxy's root CA: put the `.crt` in `apps/mobile/docker/certs/` (git-ignored).
+
 Android emulator → host machine is `http://10.0.2.2:3000`. A real phone on the same Wi-Fi: `http://<your-PC-LAN-ip>:3000`.
 **Debug** builds may use plain `http` (Android `usesCleartextTraffic` in `src/debug`, iOS `NSAllowsLocalNetworking`); **release** builds on Android
 require `https` (put the server behind a TLS reverse proxy). The app only ever uses the public API of the server you enter.

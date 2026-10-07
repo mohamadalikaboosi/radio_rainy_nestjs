@@ -1,0 +1,6 @@
+.dart_tool
+build
+.idea
+android/.gradle
+ios/Pods
+macos/Pods

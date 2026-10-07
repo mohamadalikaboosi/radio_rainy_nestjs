@@ -53,6 +53,15 @@ services:
       MINIO_ROOT_PASSWORD: radiorainy-secret
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio-data:/data"]
+  # The Flutter listener app (apps/mobile) built for the web, to look at it in a browser: http://localhost:8080
+  # Not part of the radio, so only on demand:  docker compose --profile mobile up -d --build mobile-web
+  # In the app enter the server address localhost:3000. Behind a TLS-inspecting proxy put its root CA in apps/mobile/docker/certs/.
+  mobile-web:
+    profiles: ["mobile"]
+    build:
+      context: ./apps/mobile
+      dockerfile: Dockerfile.web
+    ports: ["${MOBILE_WEB_PORT:-8080}:80"]
 volumes:
   pg-data:
   redis-data:
