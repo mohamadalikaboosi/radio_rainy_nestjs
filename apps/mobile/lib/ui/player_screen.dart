@@ -628,7 +628,7 @@ class _NowPlaying extends StatelessWidget {
     final error = c.error;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       heading,
-      if (onAir) ...[const SizedBox(height: 28), _Progress(position: c.position ?? 0, duration: cur?.duration)],
+      if (onAir) ...[const SizedBox(height: 28), _Progress(position: c.position ?? 0, duration: cur.duration)],
       if (ad != null && link != null) ...[const SizedBox(height: 28), _VisitButton(label: ad.ctaLabel ?? context.tr('player.learnMore'), onTap: () => openExternal(c.api.absolute(link)))],
       const SizedBox(height: 28),
       Wrap(spacing: 20, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
